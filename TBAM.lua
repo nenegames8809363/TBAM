@@ -1,850 +1,7501 @@
 --// =========================================================
 --// THE BROKEN ARROW MENU
 --// TBAM
---// STABLE EDITION v2.5 (CAOS EDITION)
---// UI / TEST ADMIN PANEL
---// Created by Niko x ChatGPT
+--// STABLE EDITION v2.9.0
+--// AERO ADMIN / TEST PANEL
+--//
+--// v2.9.0
+--// • HOME / DASHBOARD
+--// • MOVEMENT
+--// • FUN
+--// • VISUAL
+--// • PLAYER
+--// • TROLL
+--// • CUSTOM
+--// • SEARCH
+--// • FPS / PING / MEMORY
+--// • MULTI-THEME
+--// • MOBILE FRIENDLY
+--// • AUTO OPEN
+--// • FLOATING MOBILE BUTTON
+--// • RIGHT SHIFT
+--// • UI SCALE
+--// • COMPACT MODE
+--// • TARGET LIST
+--// • PLAYER / BOT TARGETS
+--// • TELEPORT
+--// • SPECTATE
+--// • FOLLOW
+--// • TARGET ESP
+--// • FLING
+--// • LAUNCH
+--// • SPIN TARGET
+--// • BRING TARGET
+--// • PUSH TARGET
+--// • PULL TARGET
+--// • FREEZE TARGET
+--// • UNFREEZE TARGET
+--// • RAGDOLL TARGET
+--// • UNRAGDOLL TARGET
+--// • TARGET INFO
+--// • TARGET DISTANCE
+--// • TARGET VELOCITY
+--// • TARGET HEALTH
+--// • TARGET MASS
+--// • SERVER FLING BRIDGE
+--// • REAL 3D CAMERA FLY
+--// • MOBILE FLY UP / DOWN
+--// • FLY SPEED CONTROL
+--//
+--// Use como LocalScript no seu próprio jogo/test place.
 --// =========================================================
 
+
+--// =========================================================
 --// SERVICES
+--// =========================================================
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
+local Lighting = game:GetService("Lighting")
+local Stats = game:GetService("Stats")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
+
+if not LocalPlayer then
+	warn("[TBAM] LocalPlayer não encontrado.")
+	return
+end
+
 
 --// =========================================================
 --// CONFIG
 --// =========================================================
 
-local FOV = 250
-local MAX_DISTANCE = 1000
-local AIM_PART = "Head"
+local CONFIG = {
 
-local SPEED_VALUES = { 50, 75, 100, 150 }
-local JUMP_VALUES = { 50, 75, 100, 125 }
-local FLY_VALUES = { 10, 25, 75, 100, 150 }
+	OpenSize = Vector2.new(520, 390),
+	ClosedSize = Vector2.new(58, 58),
 
-local FALLBACK_WALK_SPEED = 16
-local FALLBACK_JUMP_POWER = 50
+	DefaultScale = 0.92,
+	MinScale = 0.72,
+	MaxScale = 1.12,
 
---// =========================================================
---// STATES
---// =========================================================
+	Hotkey = Enum.KeyCode.RightShift,
 
-local ESP_ENABLED = false
-local AIM_ENABLED = false
-local SPEED_ENABLED = false
-local NOCLIP_ENABLED = false
-local JUMP_ENABLED = false
+	StartOpen = true,
 
-local SPIN_ENABLED = false
-local ZERO_GRAVITY_ENABLED = false
-local ZG_FORCE = nil
-local ZG_ATT = nil
+	SpeedValues = {
+		16,
+		24,
+		32,
+		50,
+		75,
+		100,
+		150
+	},
 
-local ANTI_KICK_ENABLED = true
+	JumpValues = {
+		50,
+		65,
+		80,
+		100,
+		125,
+		160
+	},
 
--- FLY
-local FLY_ENABLED = false
-local FLY_INDEX = 0
-local CURRENT_FLY_SPEED = 0
+	GravityValues = {
+		196.2,
+		120,
+		60,
+		20,
+		0
+	},
 
-local FLY_UP = false
-local FLY_DOWN = false
+	FlySpeeds = {
+		20,
+		40,
+		75,
+		120,
+		180,
+		260,
+		400
+	},
 
-local FLY_ATTACHMENT = nil
-local FLY_LINEAR_VELOCITY = nil
-local FLY_ORIENTATION = nil
+	FollowDistance = 5,
+	FollowHeight = 2,
 
--- GODMODE
-local GODMODE_ENABLED = false
-local GODMODE_MAX_HEALTH = math.huge -- TRAVA MÁXIMA
-local GODMODE_CONNECTIONS = {}
+	FlingPower = 350,
+	FlingImpulse = 9500,
+	FlingDuration = 0.55,
+	FlingAngular = 120,
 
-local FOV_VISIBLE = true
-local GLOW_ENABLED = true
+	LaunchPower = 180,
+	PushPower = 220,
+	PullPower = 140,
 
-local SPEED_INDEX = 1
-local CURRENT_SPEED = SPEED_VALUES[SPEED_INDEX]
+	SpinPower = 70,
 
-local JUMP_INDEX = 1
-local CURRENT_JUMP = JUMP_VALUES[JUMP_INDEX]
-
-local currentAimTarget = nil
-
-local minimized = true
-local menuAnimating = false
-local activeTab = "Combat"
-
-local tracked = {}
-
-local originalMovement = {}
-
---// =========================================================
---// ANTI-KICK HOOK
---// =========================================================
-
-task.spawn(function()
-	local rawMeta = getrawmetatable and getrawmetatable(game)
-	if rawMeta and setreadonly then
-		setreadonly(rawMeta, false)
-		local oldNamecall = rawMeta.__namecall
-		rawMeta.__namecall = newcclosure(function(self, ...)
-			local method = getnamecallmethod()
-			if ANTI_KICK_ENABLED and (method == "Kick" or method == "kick") and (self == LocalPlayer or self == Players) then
-				return nil
-			end
-			return oldNamecall(self, ...)
-		end)
-		setreadonly(rawMeta, true)
-	end
-
-	if hookfunction and LocalPlayer.Kick then
-		local oldKick
-		oldKick = hookfunction(LocalPlayer.Kick, function(self, ...)
-			if ANTI_KICK_ENABLED and (self == LocalPlayer or self == Players) then
-				return nil
-			end
-			return oldKick(self, ...)
-		end)
-	else
-		pcall(function()
-			LocalPlayer.Kick = function() end
-		end)
-	end
-end)
-
---// =========================================================
---// CUSTOMIZATION
---// =========================================================
-
-local ACTIVE_COLOR = Color3.fromRGB(145, 85, 205)
-local DEFAULT_ACTIVE_COLOR = ACTIVE_COLOR
-
-local COLOR_PRESETS = {
-	{ name = "PURPLE", color = Color3.fromRGB(145, 85, 205) },
-	{ name = "BLUE", color = Color3.fromRGB(70, 130, 235) },
-	{ name = "GREEN", color = Color3.fromRGB(60, 180, 110) },
-	{ name = "RED", color = Color3.fromRGB(220, 70, 85) },
-	{ name = "ORANGE", color = Color3.fromRGB(225, 125, 55) },
-	{ name = "CYAN", color = Color3.fromRGB(45, 190, 210) }
+	MobileFlyButtonSize = 56
 }
 
+
 --// =========================================================
---// COLORS
+--// STATE
 --// =========================================================
 
-local COLORS = {
-	background = Color3.fromRGB(10, 11, 16),
-	panel = Color3.fromRGB(17, 18, 25),
-	button = Color3.fromRGB(27, 28, 37),
-	buttonHover = Color3.fromRGB(34, 35, 46),
-	border = Color3.fromRGB(92, 96, 125),
+local State = {
 
-	text = Color3.fromRGB(242, 242, 248),
-	subtext = Color3.fromRGB(150, 153, 172),
+	MenuOpen = false,
+	MenuAnimating = false,
 
-	blue = Color3.fromRGB(71, 105, 210),
-	blueBright = Color3.fromRGB(75, 145, 255),
-	green = Color3.fromRGB(62, 175, 105),
-	purple = Color3.fromRGB(145, 85, 205),
-	red = Color3.fromRGB(220, 75, 85),
-	orange = Color3.fromRGB(220, 115, 60)
+	ActivePage = "HOME",
+
+	SpeedEnabled = false,
+	SpeedIndex = 1,
+
+	JumpEnabled = false,
+	JumpIndex = 1,
+
+	FlyEnabled = false,
+	FlyIndex = 1,
+
+	NoclipEnabled = false,
+	InfiniteJump = false,
+
+	ZeroGravity = false,
+	PlatformStand = false,
+
+	Spin = false,
+	SpinSpeed = 360,
+
+	GravityIndex = 1,
+
+	Rainbow = false,
+	Trail = false,
+	Particles = false,
+	BigHead = false,
+
+	Fullbright = false,
+	NightMode = false,
+	VividMode = false,
+
+	UIScale = CONFIG.DefaultScale,
+	CompactMode = false,
+	Glow = true,
+
+	Theme = "DEFAULT",
+
+	FPS = 0,
+	Ping = 0,
+	Memory = 0,
+
+	SelectedPlayer = nil,
+
+	TrollFollow = false,
+	TrollSpectate = false,
+	TrollESP = false,
+	TrollSpin = false,
+
+	TrollFreeze = false,
+
+	TrollTargetName = "",
+
+	FlyUpHeld = false,
+	FlyDownHeld = false
 }
 
+
 --// =========================================================
---// CHARACTER HELPERS
+--// ORIGINAL VALUES
+--// =========================================================
+
+local Original = {
+
+	Gravity = Workspace.Gravity,
+
+	WalkSpeed = 16,
+	JumpPower = 50,
+	JumpHeight = 7.2,
+
+	CameraFOV = 70,
+
+	Lighting = {
+		Brightness = Lighting.Brightness,
+		Ambient = Lighting.Ambient,
+		OutdoorAmbient = Lighting.OutdoorAmbient,
+		ClockTime = Lighting.ClockTime,
+		ExposureCompensation = Lighting.ExposureCompensation
+	},
+
+	HeadSize = nil
+}
+
+
+--// =========================================================
+--// RUNTIME
+--// =========================================================
+
+local FlyVelocity = nil
+local FlyAttachment = nil
+local FlyOrientation = nil
+
+local NoclipSaved = {}
+
+local TrailObject = nil
+local TrailAttachment0 = nil
+local TrailAttachment1 = nil
+
+local ParticleObject = nil
+
+local ToastContainer = nil
+
+local CurrentCharacter = nil
+
+local TrollTarget = nil
+local TrollHighlight = nil
+
+local TargetList = nil
+local TargetInfoLabel = nil
+local TargetStatsLabel = nil
+local TargetRemoteLabel = nil
+
+local FlyMobileControls = nil
+local FlyUpButton = nil
+local FlyDownButton = nil
+
+
+--// =========================================================
+--// REGISTRIES
+--// =========================================================
+
+local Pages = {}
+local Buttons = {}
+local Sections = {}
+local NavButtons = {}
+local ThemeButtons = {}
+
+local TargetButtons = {}
+
+local ApplyTheme
+local RefreshTargetList
+local SetTrollTarget
+local ClearTrollHighlight
+
+
+local SpeedButton
+local JumpButton
+local FlyButton
+local FlySpeedButton
+local NoclipButton
+local InfiniteJumpButton
+local GravityButton
+local PlatformButton
+
+local SpinButton
+local SpinSpeedButton
+local ZeroGravityButton
+local RainbowButton
+local TrailButton
+local ParticleButton
+local BigHeadButton
+
+local FOVButton
+local FullbrightButton
+local NightButton
+local VividButton
+
+local SpectateButton
+local FollowButton
+local TargetESPButton
+local SpinTargetButton
+local FreezeTargetButton
+
+
+--// =========================================================
+--// HELPERS
 --// =========================================================
 
 local function getCharacter()
 	return LocalPlayer.Character
 end
 
-local function getHumanoid(model)
-	if not model then return nil end
-	return model:FindFirstChildOfClass("Humanoid")
+
+local function getHumanoid(character)
+	if not character then
+		return nil
+	end
+
+	return character:FindFirstChildOfClass("Humanoid")
 end
 
-local function getRoot(model)
-	if not model then return nil end
-	return model:FindFirstChild("HumanoidRootPart")
-		or model:FindFirstChild("UpperTorso")
-		or model:FindFirstChild("Torso")
+
+local function getRoot(character)
+	if not character then
+		return nil
+	end
+
+	return character:FindFirstChild("HumanoidRootPart")
 end
 
-local function isTarget(model)
-	if not model or not model:IsA("Model") then return false end
-	if model == getCharacter() then return false end
 
-	local humanoid = getHumanoid(model)
-	local root = getRoot(model)
+local function getCamera()
+	return Workspace.CurrentCamera
+end
 
-	if not humanoid or not root or humanoid.Health <= 0 then
+
+local function safeUnit(vector, fallback)
+	if not vector or vector.Magnitude <= 0.0001 then
+		return fallback or Vector3.zero
+	end
+
+	return vector.Unit
+end
+
+
+local function safeCall(callback, ...)
+	if not callback then
+		return true
+	end
+
+	local args = table.pack(...)
+
+	local ok, err = pcall(function()
+		callback(table.unpack(args, 1, args.n))
+	end)
+
+	if not ok then
+		warn("[TBAM CALLBACK ERROR] " .. tostring(err))
+	end
+
+	return ok
+end
+
+
+local function tween(object, tweenInfo, properties)
+	if not object or not object.Parent then
+		return
+	end
+
+	local ok, err = pcall(function()
+		TweenService:Create(
+			object,
+			tweenInfo,
+			properties
+		):Play()
+	end)
+
+	if not ok then
+		warn("[TBAM TWEEN ERROR] " .. tostring(err))
+	end
+end
+
+
+local function getTargetHumanoid(target)
+	if not target then
+		return nil
+	end
+
+	return target:FindFirstChildOfClass("Humanoid")
+end
+
+
+local function getTargetRoot(target)
+	if not target then
+		return nil
+	end
+
+	return target:FindFirstChild("HumanoidRootPart")
+end
+
+
+local function isValidTrollTarget(model)
+	if not model then
+		return false
+	end
+
+	if not model:IsA("Model") then
+		return false
+	end
+
+	if model == getCharacter() then
+		return false
+	end
+
+	local humanoid = getTargetHumanoid(model)
+	local root = getTargetRoot(model)
+
+	if not humanoid or not root then
+		return false
+	end
+
+	if humanoid.Health <= 0 then
 		return false
 	end
 
 	return true
 end
 
---// =========================================================
---// GODMODE (MUITO MAIS BLINDADO)
---// =========================================================
 
-local function disconnectGodMode()
-	for _, connection in ipairs(GODMODE_CONNECTIONS) do
-		if connection then connection:Disconnect() end
+local function getTargetPlayer()
+	if not TrollTarget then
+		return nil
 	end
-	GODMODE_CONNECTIONS = {}
+
+	return Players:GetPlayerFromCharacter(TrollTarget)
 end
 
-local function setupGodMode()
-	local character = getCharacter()
-	if not character then return end
 
-	local humanoid = getHumanoid(character)
-	if not humanoid then return end
+local function getTargetDistance()
+	local myRoot = getRoot(getCharacter())
+	local targetRoot = getTargetRoot(TrollTarget)
 
-	disconnectGodMode()
-
-	humanoid.MaxHealth = GODMODE_MAX_HEALTH
-	humanoid.Health = GODMODE_MAX_HEALTH
-	humanoid.BreakJointsOnDeath = false
-
-	-- Trava anti-dano brusco
-	table.insert(
-		GODMODE_CONNECTIONS,
-		humanoid.HealthChanged:Connect(function(health)
-			if not GODMODE_ENABLED or not humanoid.Parent then return end
-			if health < GODMODE_MAX_HEALTH then
-				humanoid.Health = GODMODE_MAX_HEALTH
-			end
-		end)
-	)
-
-	-- Trava anti-estado de morte
-	table.insert(
-		GODMODE_CONNECTIONS,
-		humanoid.StateChanged:Connect(function(_, newState)
-			if not GODMODE_ENABLED then return end
-			if newState == Enum.HumanoidStateType.Dead or newState == Enum.HumanoidStateType.Physics then
-				humanoid.Health = GODMODE_MAX_HEALTH
-				humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-			end
-		end)
-	)
-
-	-- Trava por pulso do jogo (Garante imortalidade constante)
-	table.insert(
-		GODMODE_CONNECTIONS,
-		RunService.Heartbeat:Connect(function()
-			if not GODMODE_ENABLED or not humanoid.Parent then return end
-			if humanoid.Health < GODMODE_MAX_HEALTH then
-				humanoid.Health = GODMODE_MAX_HEALTH
-			end
-			local state = humanoid:GetState()
-			if state == Enum.HumanoidStateType.Dead then
-				humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-			end
-		end)
-	)
-end
-
-local function disableGodMode()
-	GODMODE_ENABLED = false
-	disconnectGodMode()
-
-	local character = getCharacter()
-	local humanoid = getHumanoid(character)
-	if humanoid then
-		humanoid.MaxHealth = 100
-		humanoid.Health = 100
-		humanoid.BreakJointsOnDeath = true
+	if not myRoot or not targetRoot then
+		return nil
 	end
+
+	return (targetRoot.Position - myRoot.Position).Magnitude
 end
+
+
+local function getTargetVelocity()
+	local targetRoot = getTargetRoot(TrollTarget)
+
+	if not targetRoot then
+		return nil
+	end
+
+	return targetRoot.AssemblyLinearVelocity.Magnitude
+end
+
+
+local function getTargetMass()
+	local targetRoot = getTargetRoot(TrollTarget)
+
+	if not targetRoot then
+		return nil
+	end
+
+	local ok, mass = pcall(function()
+		return targetRoot:GetMass()
+	end)
+
+	if ok then
+		return mass
+	end
+
+	return nil
+end
+
 
 --// =========================================================
---// CAMERA
+--// OPTIONAL SERVER REMOTE
 --// =========================================================
 
-local function getCamera()
-	return Workspace.CurrentCamera
+local function getTBAMRemote()
+	local remote = ReplicatedStorage:FindFirstChild("TBAM_Remote")
+
+	if remote and remote:IsA("RemoteEvent") then
+		return remote
+	end
+
+	return nil
 end
+
+
+local function hasServerFlingBridge()
+	return getTBAMRemote() ~= nil
+end
+
+
+local function serverAction(action, target, extra)
+	local remote = getTBAMRemote()
+
+	if not remote then
+		return false
+	end
+
+	local ok = pcall(function()
+		remote:FireServer(
+			action,
+			target,
+			extra
+		)
+	end)
+
+	return ok
+end
+
 
 --// =========================================================
---// VISIBILITY
+--// THEMES
 --// =========================================================
 
-local function isVisible(targetPart)
-	local camera = getCamera()
-	local character = getCharacter()
+local THEMES = {
 
-	if not camera or not targetPart then return false end
+	DEFAULT = {
+		Background = Color3.fromRGB(9, 10, 15),
+		Panel = Color3.fromRGB(17, 18, 25),
+		Button = Color3.fromRGB(27, 28, 37),
+		ButtonHover = Color3.fromRGB(37, 38, 50),
+		Accent = Color3.fromRGB(145, 85, 205),
+		Text = Color3.fromRGB(242, 242, 248),
+		Subtext = Color3.fromRGB(150, 153, 172),
+		Border = Color3.fromRGB(92, 96, 125),
+		Glow1 = Color3.fromRGB(85, 65, 255),
+		Glow2 = Color3.fromRGB(35, 130, 255),
+		Glow3 = Color3.fromRGB(190, 55, 180)
+	},
 
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { character }
-	params.IgnoreWater = true
+	FRUTIGER_AERO = {
+		Background = Color3.fromRGB(175, 220, 245),
+		Panel = Color3.fromRGB(220, 242, 255),
+		Button = Color3.fromRGB(190, 225, 245),
+		ButtonHover = Color3.fromRGB(215, 240, 255),
+		Accent = Color3.fromRGB(30, 135, 220),
+		Text = Color3.fromRGB(18, 65, 102),
+		Subtext = Color3.fromRGB(58, 112, 148),
+		Border = Color3.fromRGB(70, 155, 205),
+		Glow1 = Color3.fromRGB(80, 190, 255),
+		Glow2 = Color3.fromRGB(130, 225, 255),
+		Glow3 = Color3.fromRGB(90, 210, 180)
+	},
 
-	local origin = camera.CFrame.Position
-	local direction = targetPart.Position - origin
+	GLASS = {
+		Background = Color3.fromRGB(12, 17, 25),
+		Panel = Color3.fromRGB(27, 37, 50),
+		Button = Color3.fromRGB(37, 49, 65),
+		ButtonHover = Color3.fromRGB(52, 68, 87),
+		Accent = Color3.fromRGB(90, 180, 255),
+		Text = Color3.fromRGB(235, 245, 255),
+		Subtext = Color3.fromRGB(160, 184, 205),
+		Border = Color3.fromRGB(110, 150, 185),
+		Glow1 = Color3.fromRGB(70, 165, 255),
+		Glow2 = Color3.fromRGB(100, 220, 255),
+		Glow3 = Color3.fromRGB(130, 170, 255)
+	},
 
-	local result = Workspace:Raycast(origin, direction, params)
-	if not result then return true end
+	CYBER = {
+		Background = Color3.fromRGB(7, 6, 12),
+		Panel = Color3.fromRGB(18, 11, 28),
+		Button = Color3.fromRGB(35, 14, 48),
+		ButtonHover = Color3.fromRGB(55, 18, 75),
+		Accent = Color3.fromRGB(220, 55, 255),
+		Text = Color3.fromRGB(250, 240, 255),
+		Subtext = Color3.fromRGB(176, 128, 195),
+		Border = Color3.fromRGB(148, 50, 205),
+		Glow1 = Color3.fromRGB(220, 40, 255),
+		Glow2 = Color3.fromRGB(90, 30, 255),
+		Glow3 = Color3.fromRGB(255, 40, 160)
+	},
 
-	return result.Instance:IsDescendantOf(targetPart.Parent)
-end
+	WINDOWS_XP = {
+		Background = Color3.fromRGB(30, 75, 145),
+		Panel = Color3.fromRGB(60, 125, 205),
+		Button = Color3.fromRGB(70, 145, 220),
+		ButtonHover = Color3.fromRGB(90, 165, 235),
+		Accent = Color3.fromRGB(40, 165, 70),
+		Text = Color3.fromRGB(255, 255, 255),
+		Subtext = Color3.fromRGB(220, 240, 255),
+		Border = Color3.fromRGB(160, 210, 255),
+		Glow1 = Color3.fromRGB(80, 190, 255),
+		Glow2 = Color3.fromRGB(80, 240, 100),
+		Glow3 = Color3.fromRGB(255, 220, 80)
+	},
 
---// =========================================================
---// ESP & AIMBOT (MANTIDOS ORIGINAIS)
---// =========================================================
+	OLED = {
+		Background = Color3.fromRGB(0, 0, 0),
+		Panel = Color3.fromRGB(7, 7, 7),
+		Button = Color3.fromRGB(15, 15, 15),
+		ButtonHover = Color3.fromRGB(27, 27, 27),
+		Accent = Color3.fromRGB(255, 255, 255),
+		Text = Color3.fromRGB(255, 255, 255),
+		Subtext = Color3.fromRGB(160, 160, 160),
+		Border = Color3.fromRGB(85, 85, 85),
+		Glow1 = Color3.fromRGB(255, 255, 255),
+		Glow2 = Color3.fromRGB(120, 120, 120),
+		Glow3 = Color3.fromRGB(70, 70, 70)
+	},
 
-local function removeESP(model)
-	local data = tracked[model]
-	if not data then return end
-	if data.highlight then data.highlight:Destroy() end
-	if data.billboard then data.billboard:Destroy() end
-	tracked[model] = nil
-end
+	Y2K = {
+		Background = Color3.fromRGB(235, 225, 255),
+		Panel = Color3.fromRGB(245, 240, 255),
+		Button = Color3.fromRGB(210, 195, 245),
+		ButtonHover = Color3.fromRGB(230, 220, 255),
+		Accent = Color3.fromRGB(130, 75, 205),
+		Text = Color3.fromRGB(50, 30, 85),
+		Subtext = Color3.fromRGB(100, 75, 130),
+		Border = Color3.fromRGB(165, 130, 215),
+		Glow1 = Color3.fromRGB(220, 120, 255),
+		Glow2 = Color3.fromRGB(120, 180, 255),
+		Glow3 = Color3.fromRGB(255, 170, 220)
+	}
+}
 
-local function createESP(model, isPlayer)
-	if not model or not model.Parent or tracked[model] or not isTarget(model) then return end
-	local humanoid = getHumanoid(model)
-	local root = getRoot(model)
-	if not humanoid or not root then return end
+local Theme = THEMES.DEFAULT
 
-	local highlight = Instance.new("Highlight")
-	highlight.Name = "TBAM_ESP"
-	highlight.Adornee = model
-	highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-	highlight.FillTransparency = 0.76
-	highlight.OutlineTransparency = 0
-	highlight.FillColor = isPlayer and Color3.fromRGB(45, 125, 255) or Color3.fromRGB(255, 65, 70)
-	highlight.OutlineColor = isPlayer and Color3.fromRGB(110, 195, 255) or Color3.fromRGB(255, 130, 130)
-	highlight.Enabled = ESP_ENABLED
-	highlight.Parent = model
-
-	local billboard = Instance.new("BillboardGui")
-	billboard.Name = "TBAM_Info"
-	billboard.Adornee = root
-	billboard.Size = UDim2.fromOffset(210, 78)
-	billboard.StudsOffset = Vector3.new(0, 3.4, 0)
-	billboard.AlwaysOnTop = true
-	billboard.Enabled = ESP_ENABLED
-	billboard.Parent = root
-
-	local label = Instance.new("TextLabel")
-	label.BackgroundTransparency = 1
-	label.Size = UDim2.fromScale(1, 1)
-	label.Font = Enum.Font.GothamBold
-	label.TextSize = 13
-	label.TextWrapped = true
-	label.TextYAlignment = Enum.TextYAlignment.Center
-	label.TextColor3 = Color3.fromRGB(255, 255, 255)
-	label.TextStrokeTransparency = 0.35
-	label.Text = (isPlayer and "PLAYER" or "BOT") .. "\n" .. model.Name
-	label.Parent = billboard
-
-	tracked[model] = { model = model, highlight = highlight, billboard = billboard, label = label, isPlayer = isPlayer }
-end
-
-local function scanTargets()
-	for _, player in ipairs(Players:GetPlayers()) do
-		if player ~= LocalPlayer and player.Character then createESP(player.Character, true) end
-	end
-	for _, obj in ipairs(Workspace:GetDescendants()) do
-		if obj:IsA("Model") and not Players:GetPlayerFromCharacter(obj) and isTarget(obj) then createESP(obj, false) end
-	end
-end
-
-task.spawn(function()
-	while true do
-		task.wait(0.45)
-		scanTargets()
-		for model, data in pairs(tracked) do
-			if not model or not model.Parent or not isTarget(model) then
-				removeESP(model)
-			else
-				data.highlight.Enabled = ESP_ENABLED
-				data.billboard.Enabled = ESP_ENABLED
-				local humanoid = getHumanoid(model)
-				local root = getRoot(model)
-				local myRoot = getRoot(getCharacter())
-				if humanoid and root then
-					local distance = myRoot and math.floor((root.Position - myRoot.Position).Magnitude) or 0
-					local visible = isVisible(root)
-					data.highlight.FillTransparency = visible and 0.76 or 0.91
-					data.label.Text = (data.isPlayer and "PLAYER" or "BOT") .. "\n" .. model.Name .. "\nHP: " .. math.floor(humanoid.Health) .. "  •  " .. distance .. "m"
-				end
-			end
-		end
-	end
-end)
-
-local function getTarget()
-	local camera = getCamera()
-	local character = getCharacter()
-	local myRoot = getRoot(character)
-	if not camera or not myRoot then return nil end
-
-	local bestTarget = nil
-	local bestScreenDistance = FOV
-	local viewport = camera.ViewportSize
-	local center = Vector2.new(viewport.X / 2, viewport.Y / 2)
-
-	local function checkModel(model)
-		if not model or model == character or not model.Parent or not isTarget(model) then return end
-		local humanoid = getHumanoid(model)
-		if not humanoid or humanoid.Health <= 0 then return end
-		local head = model:FindFirstChild(AIM_PART)
-		if not head or not head:IsA("BasePart") then return end
-		if (head.Position - myRoot.Position).Magnitude > MAX_DISTANCE then return end
-		local screenPos, onScreen = camera:WorldToViewportPoint(head.Position)
-		if not onScreen or screenPos.Z <= 0 then return end
-		local screenDistance = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
-		if screenDistance > FOV or not isVisible(head) then return end
-		if screenDistance < bestScreenDistance then
-			bestScreenDistance = screenDistance
-			bestTarget = head
-		end
-	end
-
-	for _, player in ipairs(Players:GetPlayers()) do
-		if player ~= LocalPlayer and player.Character then checkModel(player.Character) end
-	end
-	for model in pairs(tracked) do
-		if not Players:GetPlayerFromCharacter(model) then checkModel(model) end
-	end
-	return bestTarget
-end
-
-RunService:BindToRenderStep("TBAM_Aimbot", Enum.RenderPriority.Camera.Value + 1, function()
-	if not AIM_ENABLED then
-		currentAimTarget = nil
-		return
-	end
-	local camera = getCamera()
-	if not camera then return end
-	if currentAimTarget then
-		local model = currentAimTarget.Parent
-		local humanoid = model and getHumanoid(model)
-		if not model or not model.Parent or not humanoid or humanoid.Health <= 0 or not isVisible(currentAimTarget) then
-			currentAimTarget = nil
-		end
-	end
-	if not currentAimTarget then currentAimTarget = getTarget() end
-	if not currentAimTarget then return end
-	camera.CFrame = CFrame.lookAt(camera.CFrame.Position, currentAimTarget.Position)
-end)
 
 --// =========================================================
---// MOVEMENT (SPEED, JUMP, NOCLIP, FLY)
+--// PLAYER GUI
 --// =========================================================
 
-local function saveOriginalMovement(character)
-	if not character or originalMovement[character] then return end
-	local humanoid = getHumanoid(character)
-	if not humanoid then return end
-	originalMovement[character] = { WalkSpeed = humanoid.WalkSpeed, UseJumpPower = humanoid.UseJumpPower, JumpPower = humanoid.JumpPower, JumpHeight = humanoid.JumpHeight }
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+local oldGui = PlayerGui:FindFirstChild("TBAM_GUI")
+
+if oldGui then
+	pcall(function()
+		oldGui:Destroy()
+	end)
 end
 
-local function applySpeed()
-	local character = getCharacter()
-	local humanoid = getHumanoid(character)
-	if not humanoid then return end
-	saveOriginalMovement(character)
-	local original = originalMovement[character]
-	humanoid.WalkSpeed = SPEED_ENABLED and CURRENT_SPEED or (original and original.WalkSpeed or FALLBACK_WALK_SPEED)
-end
-
-local function applyJump()
-	local character = getCharacter()
-	local humanoid = getHumanoid(character)
-	if not humanoid then return end
-	saveOriginalMovement(character)
-	local original = originalMovement[character]
-	if JUMP_ENABLED then
-		humanoid.UseJumpPower = true
-		humanoid.JumpPower = CURRENT_JUMP
-	else
-		if original then
-			humanoid.UseJumpPower = original.UseJumpPower
-			humanoid.JumpPower = original.JumpPower
-			humanoid.JumpHeight = original.JumpHeight
-		else
-			humanoid.UseJumpPower = true
-			humanoid.JumpPower = FALLBACK_JUMP_POWER
-		end
-	end
-end
-
-local function cleanupFly()
-	if FLY_LINEAR_VELOCITY then FLY_LINEAR_VELOCITY:Destroy() FLY_LINEAR_VELOCITY = nil end
-	if FLY_ORIENTATION then FLY_ORIENTATION:Destroy() FLY_ORIENTATION = nil end
-	if FLY_ATTACHMENT then FLY_ATTACHMENT:Destroy() FLY_ATTACHMENT = nil end
-	local character = getCharacter()
-	local humanoid = getHumanoid(character)
-	local root = getRoot(character)
-	if humanoid then humanoid.AutoRotate = true humanoid.PlatformStand = false end
-	if root then root.AssemblyLinearVelocity = Vector3.zero root.AssemblyAngularVelocity = Vector3.zero end
-end
-
-local function setupFly()
-	cleanupFly()
-	if not FLY_ENABLED then return end
-	local character = getCharacter()
-	local humanoid = getHumanoid(character)
-	local root = getRoot(character)
-	if not humanoid or not root then return end
-	FLY_ATTACHMENT = Instance.new("Attachment", root)
-	FLY_LINEAR_VELOCITY = Instance.new("LinearVelocity", root)
-	FLY_LINEAR_VELOCITY.Attachment0 = FLY_ATTACHMENT
-	FLY_LINEAR_VELOCITY.RelativeTo = Enum.ActuatorRelativeTo.World
-	FLY_LINEAR_VELOCITY.VelocityConstraintMode = Enum.VelocityConstraintMode.Vector
-	FLY_LINEAR_VELOCITY.VectorVelocity = Vector3.zero
-	FLY_LINEAR_VELOCITY.MaxForce = math.huge
-	FLY_ORIENTATION = Instance.new("AlignOrientation", root)
-	FLY_ORIENTATION.Attachment0 = FLY_ATTACHMENT
-	FLY_ORIENTATION.Mode = Enum.OrientationAlignmentMode.OneAttachment
-	FLY_ORIENTATION.RigidityEnabled = true
-	FLY_ORIENTATION.MaxTorque = math.huge
-	FLY_ORIENTATION.Responsiveness = 200
-	humanoid.AutoRotate = false
-	humanoid.PlatformStand = true
-end
-
-UserInputService.InputBegan:Connect(function(input, gp)
-	if gp then return end
-	if input.KeyCode == Enum.KeyCode.Space then FLY_UP = true
-	elseif input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.RightShift then FLY_DOWN = true end
-end)
-UserInputService.InputEnded:Connect(function(input)
-	if input.KeyCode == Enum.KeyCode.Space then FLY_UP = false
-	elseif input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.RightShift then FLY_DOWN = false end
-end)
-
-RunService.RenderStepped:Connect(function()
-	if not FLY_ENABLED then return end
-	local character = getCharacter()
-	local humanoid = getHumanoid(character)
-	local root = getRoot(character)
-	local camera = getCamera()
-	if not humanoid or not root or not camera then return end
-	if not FLY_LINEAR_VELOCITY or not FLY_ORIENTATION then setupFly() return end
-	local speed = CURRENT_FLY_SPEED
-	local cameraCF = camera.CFrame
-	local move = humanoid.MoveDirection
-	local velocity = Vector3.zero
-	if move.Magnitude > 0.001 then
-		local flatLook = Vector3.new(cameraCF.LookVector.X, 0, cameraCF.LookVector.Z).Unit
-		local flatRight = Vector3.new(cameraCF.RightVector.X, 0, cameraCF.RightVector.Z).Unit
-		velocity = (cameraCF.LookVector * move:Dot(flatLook) + cameraCF.RightVector * move:Dot(flatRight)) * speed
-	end
-	if FLY_UP then velocity += Vector3.new(0, speed, 0) elseif FLY_DOWN then velocity += Vector3.new(0, -speed, 0) end
-	FLY_LINEAR_VELOCITY.VectorVelocity = velocity
-	FLY_ORIENTATION.CFrame = cameraCF
-end)
-
-RunService.Stepped:Connect(function()
-	if not NOCLIP_ENABLED then return end
-	local character = getCharacter()
-	if not character then return end
-	for _, part in ipairs(character:GetDescendants()) do
-		if part:IsA("BasePart") then part.CanCollide = false end
-	end
-end)
 
 --// =========================================================
---// SPIN
---// =========================================================
-RunService.RenderStepped:Connect(function(dt)
-	if not SPIN_ENABLED then return end
-	local root = getRoot(getCharacter())
-	if root then root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(480) * dt, 0) end
-end)
-
---// =========================================================
---// ZERO GRAVITY (TRUE ZERO GRAVITY)
---// =========================================================
-local function cleanupZeroG()
-	if ZG_FORCE then ZG_FORCE:Destroy() ZG_FORCE = nil end
-	if ZG_ATT then ZG_ATT:Destroy() ZG_ATT = nil end
-	local char = getCharacter()
-	local hum = getHumanoid(char)
-	if hum and not FLY_ENABLED then hum.PlatformStand = false end
-end
-
-local function setupZeroG()
-	cleanupZeroG()
-	if not ZERO_GRAVITY_ENABLED or FLY_ENABLED then return end
-	local char = getCharacter()
-	local root = getRoot(char)
-	local hum = getHumanoid(char)
-	if not root or not hum then return end
-
-	hum.PlatformStand = true -- Deixa ragdoll/livre
-	ZG_ATT = Instance.new("Attachment", root)
-	ZG_FORCE = Instance.new("VectorForce", root)
-	ZG_FORCE.Attachment0 = ZG_ATT
-	ZG_FORCE.RelativeTo = Enum.ActuatorRelativeTo.World
-
-	-- Cancela exatamente a gravidade do mapa baseado na massa
-	local mass = 0
-	for _, p in ipairs(char:GetDescendants()) do
-		if p:IsA("BasePart") then mass += p.Mass end
-	end
-	ZG_FORCE.Force = Vector3.new(0, Workspace.Gravity * mass, 0)
-end
-
-RunService.Heartbeat:Connect(function()
-	if not ZERO_GRAVITY_ENABLED or FLY_ENABLED then return end
-	local root = getRoot(getCharacter())
-	local hum = getHumanoid(getCharacter())
-	local cam = getCamera()
-	if not root or not hum or not cam then return end
-	
-	-- Garante que continue flutuando e ativa física de impulso (Thrusters)
-	hum.PlatformStand = true 
-	local move = hum.MoveDirection
-	
-	-- Propulsores WASD
-	if move.Magnitude > 0 then
-		local force = move * 45 -- Força do drift
-		root:ApplyImpulse(force)
-		root:ApplyAngularImpulse(Vector3.new(math.random(-15,15), math.random(-15,15), math.random(-15,15))) -- Gira doidão no espaço
-	end
-	
-	-- Propulsores Cima/Baixo
-	if FLY_UP then
-		root:ApplyImpulse(Vector3.new(0, 45, 0))
-	elseif FLY_DOWN then
-		root:ApplyImpulse(Vector3.new(0, -45, 0))
-	end
-end)
-
---// =========================================================
---// GUI
+--// SCREEN GUI
 --// =========================================================
 
 local gui = Instance.new("ScreenGui")
+
 gui.Name = "TBAM_GUI"
-gui.ResetOnSpawn = false
 gui.IgnoreGuiInset = true
+gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+gui.DisplayOrder = 1000
+gui.Enabled = true
 
-local OPEN_SIZE = UDim2.fromOffset(335, 300)
-local CLOSED_SIZE = UDim2.fromOffset(54, 54)
+gui.Parent = PlayerGui
 
-local menu = Instance.new("Frame")
-menu.Name = "TheBrokenArrowMenu"
-menu.Size = CLOSED_SIZE
-menu.Position = UDim2.fromScale(0.035, 0.18)
-menu.BackgroundColor3 = COLORS.background
-menu.BackgroundTransparency = 1
-menu.BorderSizePixel = 0
-menu.ClipsDescendants = true
-menu.Active = true
-menu.Visible = false
-menu.Parent = gui
 
-local menuCorner = Instance.new("UICorner", menu) menuCorner.CornerRadius = UDim.new(0, 20)
-local menuStroke = Instance.new("UIStroke", menu) menuStroke.Color = COLORS.border menuStroke.Thickness = 1 menuStroke.Transparency = 0.55
+--// =========================================================
+--// UI SCALE
+--// =========================================================
 
-local glowLayer = Instance.new("Frame", menu) glowLayer.Size = UDim2.fromScale(1, 1) glowLayer.BackgroundTransparency = 1 glowLayer.ClipsDescendants = true glowLayer.ZIndex = 0
-local function createSoftGlow(pos, size, color)
-	local glow = Instance.new("Frame", glowLayer) glow.Size = UDim2.fromOffset(size, size) glow.Position = pos glow.AnchorPoint = Vector2.new(0.5, 0.5) glow.BackgroundColor3 = color glow.BackgroundTransparency = 0.88 glow.BorderSizePixel = 0 glow.ZIndex = 0
-	Instance.new("UICorner", glow).CornerRadius = UDim.new(1, 0)
-	return glow
+local UIScaleObject = Instance.new("UIScale")
+
+UIScaleObject.Scale = State.UIScale
+
+UIScaleObject.Parent = gui
+
+
+--// =========================================================
+--// TOAST
+--// =========================================================
+
+ToastContainer = Instance.new("Frame")
+
+ToastContainer.Name = "TBAM_Toasts"
+ToastContainer.AnchorPoint = Vector2.new(1, 0)
+ToastContainer.Position = UDim2.new(1, -18, 0, 18)
+ToastContainer.Size = UDim2.fromOffset(250, 300)
+ToastContainer.BackgroundTransparency = 1
+ToastContainer.ZIndex = 2000
+ToastContainer.Parent = gui
+
+
+local ToastLayout = Instance.new("UIListLayout")
+
+ToastLayout.Padding = UDim.new(0, 8)
+ToastLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+ToastLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+ToastLayout.Parent = ToastContainer
+
+
+local function CreateToast(title, message, duration)
+
+	if not ToastContainer or not ToastContainer.Parent then
+		return
+	end
+
+	local toast = Instance.new("Frame")
+
+	toast.Size = UDim2.new(1, 0, 0, 62)
+	toast.BackgroundColor3 = Color3.fromRGB(20, 21, 29)
+	toast.BackgroundTransparency = 0.08
+	toast.BorderSizePixel = 0
+	toast.ZIndex = 2001
+	toast.Parent = ToastContainer
+
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 14)
+	corner.Parent = toast
+
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Color3.fromRGB(120, 125, 160)
+	stroke.Transparency = 0.55
+	stroke.Parent = toast
+
+
+	local titleLabel = Instance.new("TextLabel")
+
+	titleLabel.BackgroundTransparency = 1
+	titleLabel.Position = UDim2.fromOffset(14, 7)
+	titleLabel.Size = UDim2.new(1, -28, 0, 18)
+	titleLabel.Font = Enum.Font.GothamBold
+	titleLabel.Text = title or "TBAM"
+	titleLabel.TextSize = 13
+	titleLabel.TextColor3 = Color3.fromRGB(245, 245, 255)
+	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+	titleLabel.ZIndex = 2002
+	titleLabel.Parent = toast
+
+
+	local messageLabel = Instance.new("TextLabel")
+
+	messageLabel.BackgroundTransparency = 1
+	messageLabel.Position = UDim2.fromOffset(14, 27)
+	messageLabel.Size = UDim2.new(1, -28, 0, 25)
+	messageLabel.Font = Enum.Font.GothamMedium
+	messageLabel.Text = message or ""
+	messageLabel.TextSize = 10
+	messageLabel.TextColor3 = Color3.fromRGB(175, 178, 195)
+	messageLabel.TextXAlignment = Enum.TextXAlignment.Left
+	messageLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	messageLabel.ZIndex = 2002
+	messageLabel.Parent = toast
+
+
+	toast.Position = UDim2.new(0, 0, 0, -70)
+
+	tween(
+		toast,
+		TweenInfo.new(
+			0.3,
+			Enum.EasingStyle.Back,
+			Enum.EasingDirection.Out
+		),
+		{
+			Position = UDim2.fromOffset(0, 0)
+		}
+	)
+
+
+	task.delay(duration or 2.2, function()
+
+		if not toast or not toast.Parent then
+			return
+		end
+
+		local exitTween = TweenService:Create(
+			toast,
+			TweenInfo.new(
+				0.25,
+				Enum.EasingStyle.Quart,
+				Enum.EasingDirection.In
+			),
+			{
+				Position = UDim2.new(0, 0, 0, -70),
+				BackgroundTransparency = 1
+			}
+		)
+
+		exitTween:Play()
+
+		exitTween.Completed:Wait()
+
+		if toast.Parent then
+			toast:Destroy()
+		end
+	end)
 end
-local glowA = createSoftGlow(UDim2.fromScale(-0.12, 0.08), 250, Color3.fromRGB(85, 65, 255))
-local glowB = createSoftGlow(UDim2.fromScale(1.12, 0.43), 270, Color3.fromRGB(35, 130, 255))
-local glowC = createSoftGlow(UDim2.fromScale(0.42, 1.12), 260, Color3.fromRGB(190, 55, 180))
+
+
+--// =========================================================
+--// MAIN WINDOW
+--// =========================================================
+
+local Window = Instance.new("Frame")
+
+Window.Name = "TBAM_Window"
+Window.Size = UDim2.fromOffset(
+	CONFIG.OpenSize.X,
+	CONFIG.OpenSize.Y
+)
+
+Window.Position = UDim2.fromScale(0.5, 0.5)
+Window.AnchorPoint = Vector2.new(0.5, 0.5)
+Window.BackgroundColor3 = Theme.Background
+Window.BorderSizePixel = 0
+Window.Visible = false
+Window.ClipsDescendants = true
+Window.Active = true
+Window.ZIndex = 100
+Window.Parent = gui
+
+
+local WindowCorner = Instance.new("UICorner")
+WindowCorner.CornerRadius = UDim.new(0, 20)
+WindowCorner.Parent = Window
+
+
+local WindowStroke = Instance.new("UIStroke")
+WindowStroke.Color = Theme.Border
+WindowStroke.Transparency = 0.35
+WindowStroke.Thickness = 1.2
+WindowStroke.Parent = Window
+
+
+--// =========================================================
+--// GLOW
+--// =========================================================
+
+local GlowLayer = Instance.new("Frame")
+
+GlowLayer.Size = UDim2.fromScale(1, 1)
+GlowLayer.BackgroundTransparency = 1
+GlowLayer.ClipsDescendants = true
+GlowLayer.ZIndex = 101
+GlowLayer.Parent = Window
+
+
+local function MakeGlow(size, position, color)
+
+	local object = Instance.new("Frame")
+
+	object.Size = UDim2.fromOffset(size, size)
+	object.Position = position
+	object.AnchorPoint = Vector2.new(0.5, 0.5)
+	object.BackgroundColor3 = color
+	object.BackgroundTransparency = 0.9
+	object.BorderSizePixel = 0
+	object.ZIndex = 102
+	object.Parent = GlowLayer
+
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(1, 0)
+	corner.Parent = object
+
+	return object
+end
+
+
+local GlowA = MakeGlow(
+	220,
+	UDim2.fromScale(-0.05, 0.1),
+	Theme.Glow1
+)
+
+local GlowB = MakeGlow(
+	250,
+	UDim2.fromScale(1.05, 0.45),
+	Theme.Glow2
+)
+
+local GlowC = MakeGlow(
+	230,
+	UDim2.fromScale(0.5, 1.05),
+	Theme.Glow3
+)
+
 
 task.spawn(function()
-	while menu.Parent do
-		if not GLOW_ENABLED then
-			glowA.Visible = false glowB.Visible = false glowC.Visible = false task.wait(0.4)
+
+	while gui.Parent do
+
+		if not Window.Visible or not State.Glow then
+
+			GlowA.Visible = false
+			GlowB.Visible = false
+			GlowC.Visible = false
+
+			task.wait(0.35)
+
 		else
-			glowA.Visible = true glowB.Visible = true glowC.Visible = true
-			TweenService:Create(glowA, TweenInfo.new(8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), { Position = UDim2.fromScale(0.82, 0.30) }):Play()
-			TweenService:Create(glowB, TweenInfo.new(9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), { Position = UDim2.fromScale(0.17, 0.79) }):Play()
-			TweenService:Create(glowC, TweenInfo.new(8.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), { Position = UDim2.fromScale(0.80, 0.10) }):Play()
-			task.wait(8)
-			glowA.Position = UDim2.fromScale(-0.12, 0.08) glowB.Position = UDim2.fromScale(1.12, 0.43) glowC.Position = UDim2.fromScale(0.42, 1.12)
+
+			GlowA.Visible = true
+			GlowB.Visible = true
+			GlowC.Visible = true
+
+			tween(
+				GlowA,
+				TweenInfo.new(
+					7,
+					Enum.EasingStyle.Sine,
+					Enum.EasingDirection.InOut
+				),
+				{
+					Position = UDim2.fromScale(0.75, 0.2)
+				}
+			)
+
+			tween(
+				GlowB,
+				TweenInfo.new(
+					8,
+					Enum.EasingStyle.Sine,
+					Enum.EasingDirection.InOut
+				),
+				{
+					Position = UDim2.fromScale(0.2, 0.8)
+				}
+			)
+
+			tween(
+				GlowC,
+				TweenInfo.new(
+					7.5,
+					Enum.EasingStyle.Sine,
+					Enum.EasingDirection.InOut
+				),
+				{
+					Position = UDim2.fromScale(0.8, 0.12)
+				}
+			)
+
+			task.wait(7)
+
+			if GlowA.Parent then
+				GlowA.Position =
+					UDim2.fromScale(-0.05, 0.1)
+			end
+
+			if GlowB.Parent then
+				GlowB.Position =
+					UDim2.fromScale(1.05, 0.45)
+			end
+
+			if GlowC.Parent then
+				GlowC.Position =
+					UDim2.fromScale(0.5, 1.05)
+			end
 		end
 	end
 end)
 
-local glass = Instance.new("Frame", menu) glass.Size = UDim2.fromScale(1, 1) glass.BackgroundColor3 = Color3.fromRGB(20, 21, 29) glass.BackgroundTransparency = 0.42 glass.BorderSizePixel = 0 glass.ZIndex = 2
-Instance.new("UICorner", glass).CornerRadius = UDim.new(0, 20)
 
-local header = Instance.new("Frame", menu) header.Position = UDim2.fromOffset(13, 8) header.Size = UDim2.new(1, -26, 0, 54) header.BackgroundTransparency = 1 header.ZIndex = 10
-local title = Instance.new("TextLabel", header) title.BackgroundTransparency = 1 title.Position = UDim2.fromOffset(6, 0) title.Size = UDim2.new(1, -65, 0, 30) title.Font = Enum.Font.GothamBold title.Text = "TBAM" title.TextSize = 22 title.TextColor3 = COLORS.text title.TextXAlignment = Enum.TextXAlignment.Left title.ZIndex = 11
-local subtitle = Instance.new("TextLabel", header) subtitle.BackgroundTransparency = 1 subtitle.Position = UDim2.fromOffset(7, 27) subtitle.Size = UDim2.new(1, -65, 0, 20) subtitle.Font = Enum.Font.GothamMedium subtitle.Text = "THE BROKEN ARROW  •  CONTROL PANEL" subtitle.TextSize = 9 subtitle.TextColor3 = COLORS.subtext subtitle.TextXAlignment = Enum.TextXAlignment.Left subtitle.ZIndex = 11
+--// =========================================================
+--// HEADER
+--// =========================================================
 
-local closeButton = Instance.new("TextButton", header) closeButton.Size = UDim2.fromOffset(36, 36) closeButton.Position = UDim2.new(1, -36, 0, 3) closeButton.BackgroundColor3 = Color3.fromRGB(30, 31, 40) closeButton.BackgroundTransparency = 0.15 closeButton.Text = "×" closeButton.Font = Enum.Font.GothamMedium closeButton.TextSize = 23 closeButton.TextColor3 = COLORS.text closeButton.AutoButtonColor = false closeButton.BorderSizePixel = 0 closeButton.ZIndex = 20
-Instance.new("UICorner", closeButton).CornerRadius = UDim.new(1, 0)
+local Header = Instance.new("Frame")
 
-local restoreButton = Instance.new("TextButton", gui) restoreButton.Size = CLOSED_SIZE restoreButton.Position = UDim2.fromScale(0.035, 0.18) restoreButton.AnchorPoint = Vector2.new(0.5, 0.5) restoreButton.BackgroundColor3 = Color3.fromRGB(17, 18, 25) restoreButton.Text = "➜" restoreButton.TextSize = 24 restoreButton.Font = Enum.Font.GothamBold restoreButton.TextColor3 = COLORS.text restoreButton.AutoButtonColor = false restoreButton.BorderSizePixel = 0 restoreButton.Visible = true restoreButton.ZIndex = 50
-Instance.new("UICorner", restoreButton).CornerRadius = UDim.new(1, 0)
-local restoreStroke = Instance.new("UIStroke", restoreButton) restoreStroke.Color = ACTIVE_COLOR restoreStroke.Transparency = 0.35 restoreStroke.Thickness = 1.2
+Header.Position = UDim2.fromOffset(12, 10)
+Header.Size = UDim2.new(1, -24, 0, 52)
+Header.BackgroundTransparency = 1
+Header.ZIndex = 200
+Header.Parent = Window
 
-local menuAnchor = UDim2.fromScale(0.035, 0.18)
-local function iconToMenuPosition() return UDim2.new(restoreButton.Position.X.Scale, restoreButton.Position.X.Offset - 27, restoreButton.Position.Y.Scale, restoreButton.Position.Y.Offset - 27) end
-local function menuToIconPosition(pos) return UDim2.new(pos.X.Scale, pos.X.Offset + 27, pos.Y.Scale, pos.Y.Offset + 27) end
 
-local miniDragging, miniMoved, miniDragStart, miniStartPos, skipNextRestore = false, false, nil, nil, false
-restoreButton.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then miniDragging = true miniMoved = false miniDragStart = input.Position miniStartPos = restoreButton.Position end end)
-UserInputService.InputChanged:Connect(function(input) if not miniDragging then return end if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then return end local delta = input.Position - miniDragStart if math.abs(delta.X) > 8 or math.abs(delta.Y) > 8 then miniMoved = true end if not miniMoved then return end restoreButton.Position = UDim2.new(miniStartPos.X.Scale, miniStartPos.X.Offset + delta.X, miniStartPos.Y.Scale, miniStartPos.Y.Offset + delta.Y) end)
-UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then if miniMoved then skipNextRestore = true task.defer(function() miniMoved = false end) end miniDragging = false end end)
+local Title = Instance.new("TextLabel")
 
-local function openMenu()
-	if not minimized or menuAnimating then return end
-	menuAnimating = true menuAnchor = iconToMenuPosition() menu.Position = menuAnchor menu.Size = CLOSED_SIZE menu.BackgroundTransparency = 1 menu.Visible = true restoreButton.Visible = false
-	TweenService:Create(menu, TweenInfo.new(0.46, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = OPEN_SIZE }):Play()
-	TweenService:Create(menu, TweenInfo.new(0.30, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { BackgroundTransparency = 0.04 }):Play()
-	task.wait(0.46) minimized = false menuAnimating = false
+Title.BackgroundTransparency = 1
+Title.Position = UDim2.fromOffset(8, 0)
+Title.Size = UDim2.new(1, -150, 0, 28)
+Title.Font = Enum.Font.GothamBold
+Title.Text = "TBAM"
+Title.TextSize = 22
+Title.TextColor3 = Theme.Text
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.ZIndex = 201
+Title.Parent = Header
+
+
+local Subtitle = Instance.new("TextLabel")
+
+Subtitle.BackgroundTransparency = 1
+Subtitle.Position = UDim2.fromOffset(9, 26)
+Subtitle.Size = UDim2.new(1, -150, 0, 17)
+Subtitle.Font = Enum.Font.GothamMedium
+Subtitle.Text = "THE BROKEN ARROW  •  v2.9.0"
+Subtitle.TextSize = 9
+Subtitle.TextColor3 = Theme.Subtext
+Subtitle.TextXAlignment = Enum.TextXAlignment.Left
+Subtitle.ZIndex = 201
+Subtitle.Parent = Header
+
+
+local Status = Instance.new("TextLabel")
+
+Status.BackgroundTransparency = 1
+Status.Position = UDim2.new(1, -126, 0, 8)
+Status.Size = UDim2.fromOffset(92, 25)
+Status.Font = Enum.Font.GothamBold
+Status.TextSize = 10
+Status.TextColor3 = Theme.Subtext
+Status.Text = "● READY"
+Status.TextXAlignment = Enum.TextXAlignment.Right
+Status.ZIndex = 201
+Status.Parent = Header
+
+
+--// =========================================================
+--// CLOSE
+--// =========================================================
+
+local CloseButton = Instance.new("TextButton")
+
+CloseButton.Size = UDim2.fromOffset(34, 34)
+CloseButton.Position = UDim2.new(1, -34, 0, 1)
+CloseButton.BackgroundColor3 = Theme.Button
+CloseButton.BackgroundTransparency = 0.15
+CloseButton.BorderSizePixel = 0
+CloseButton.Text = "×"
+CloseButton.TextSize = 22
+CloseButton.Font = Enum.Font.GothamMedium
+CloseButton.TextColor3 = Theme.Text
+CloseButton.AutoButtonColor = false
+CloseButton.ZIndex = 250
+CloseButton.Parent = Header
+
+
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(1, 0)
+CloseCorner.Parent = CloseButton
+
+
+--// =========================================================
+--// FLOATING BUTTON
+--// =========================================================
+
+local FloatingButton = Instance.new("TextButton")
+
+FloatingButton.Name = "TBAM_FloatingButton"
+FloatingButton.Size = UDim2.fromOffset(58, 58)
+FloatingButton.Position = UDim2.new(0, 18, 0.5, 0)
+FloatingButton.AnchorPoint = Vector2.new(0, 0.5)
+FloatingButton.BackgroundColor3 = Theme.Panel
+FloatingButton.BorderSizePixel = 0
+FloatingButton.Text = "TB"
+FloatingButton.TextSize = 20
+FloatingButton.Font = Enum.Font.GothamBlack
+FloatingButton.TextColor3 = Theme.Text
+FloatingButton.AutoButtonColor = false
+FloatingButton.Visible = true
+FloatingButton.ZIndex = 900
+FloatingButton.Parent = gui
+
+
+local FloatingCorner = Instance.new("UICorner")
+FloatingCorner.CornerRadius = UDim.new(1, 0)
+FloatingCorner.Parent = FloatingButton
+
+
+local FloatingStroke = Instance.new("UIStroke")
+FloatingStroke.Color = Theme.Accent
+FloatingStroke.Thickness = 1.5
+FloatingStroke.Parent = FloatingButton
+
+
+--// =========================================================
+--// SEARCH
+--// =========================================================
+
+local SearchBox = Instance.new("TextBox")
+
+SearchBox.Position = UDim2.fromOffset(190, 67)
+SearchBox.Size = UDim2.new(1, -205, 0, 34)
+SearchBox.BackgroundColor3 = Theme.Button
+SearchBox.BackgroundTransparency = 0.12
+SearchBox.BorderSizePixel = 0
+SearchBox.ClearTextOnFocus = false
+SearchBox.Font = Enum.Font.GothamMedium
+SearchBox.PlaceholderText = "Search..."
+SearchBox.PlaceholderColor3 = Theme.Subtext
+SearchBox.Text = ""
+SearchBox.TextColor3 = Theme.Text
+SearchBox.TextSize = 11
+SearchBox.TextXAlignment = Enum.TextXAlignment.Left
+SearchBox.ZIndex = 250
+SearchBox.Parent = Window
+
+
+local SearchCorner = Instance.new("UICorner")
+SearchCorner.CornerRadius = UDim.new(0, 10)
+SearchCorner.Parent = SearchBox
+
+
+local SearchPadding = Instance.new("UIPadding")
+SearchPadding.PaddingLeft = UDim.new(0, 11)
+SearchPadding.PaddingRight = UDim.new(0, 11)
+SearchPadding.Parent = SearchBox
+
+
+--// =========================================================
+--// SIDEBAR
+--// =========================================================
+
+local Sidebar = Instance.new("ScrollingFrame")
+
+Sidebar.Name = "TBAM_Sidebar"
+Sidebar.Position = UDim2.fromOffset(12, 67)
+Sidebar.Size = UDim2.fromOffset(165, 310)
+Sidebar.BackgroundColor3 = Theme.Panel
+Sidebar.BackgroundTransparency = 0.15
+Sidebar.BorderSizePixel = 0
+Sidebar.ZIndex = 220
+Sidebar.ScrollBarThickness = 2
+Sidebar.ScrollBarImageColor3 = Theme.Accent
+Sidebar.ScrollBarImageTransparency = 0.4
+Sidebar.CanvasSize = UDim2.new()
+Sidebar.AutomaticCanvasSize = Enum.AutomaticSize.Y
+Sidebar.Parent = Window
+
+
+local SidebarCorner = Instance.new("UICorner")
+SidebarCorner.CornerRadius = UDim.new(0, 15)
+SidebarCorner.Parent = Sidebar
+
+
+local SideLayout = Instance.new("UIListLayout")
+SideLayout.Padding = UDim.new(0, 5)
+SideLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+SideLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+SideLayout.Parent = Sidebar
+
+
+local SidePadding = Instance.new("UIPadding")
+SidePadding.PaddingTop = UDim.new(0, 8)
+SidePadding.PaddingLeft = UDim.new(0, 7)
+SidePadding.PaddingRight = UDim.new(0, 7)
+SidePadding.PaddingBottom = UDim.new(0, 7)
+SidePadding.Parent = Sidebar
+
+
+--// =========================================================
+--// CONTENT
+--// =========================================================
+
+local Content = Instance.new("Frame")
+
+Content.Position = UDim2.fromOffset(190, 108)
+Content.Size = UDim2.new(1, -203, 1, -120)
+Content.BackgroundTransparency = 1
+Content.ClipsDescendants = true
+Content.ZIndex = 210
+Content.Parent = Window
+
+
+--// =========================================================
+--// PAGE CREATOR
+--// =========================================================
+
+local function CreatePage(name)
+
+	local page = Instance.new("ScrollingFrame")
+
+	page.Name = name
+	page.Size = UDim2.fromScale(1, 1)
+	page.BackgroundTransparency = 1
+	page.BorderSizePixel = 0
+	page.ScrollBarThickness = 3
+	page.ScrollBarImageColor3 = Theme.Accent
+	page.ScrollBarImageTransparency = 0.55
+	page.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	page.CanvasSize = UDim2.new()
+	page.Visible = false
+	page.ZIndex = 215
+	page.Parent = Content
+
+
+	local padding = Instance.new("UIPadding")
+
+	padding.PaddingTop = UDim.new(0, 4)
+	padding.PaddingBottom = UDim.new(0, 15)
+	padding.PaddingLeft = UDim.new(0, 3)
+	padding.PaddingRight = UDim.new(0, 3)
+	padding.Parent = page
+
+
+	local layout = Instance.new("UIListLayout")
+
+	layout.Padding = UDim.new(0, 7)
+	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	layout.Parent = page
+
+	Pages[name] = page
+
+	return page
 end
 
-local function closeMenu()
-	if minimized or menuAnimating then return end
-	menuAnimating = true menuAnchor = menu.Position
-	TweenService:Create(menu, TweenInfo.new(0.34, Enum.EasingStyle.Back, Enum.EasingDirection.In), { Size = CLOSED_SIZE }):Play()
-	TweenService:Create(menu, TweenInfo.new(0.24, Enum.EasingStyle.Quart, Enum.EasingDirection.In), { BackgroundTransparency = 1 }):Play()
-	task.wait(0.34) menu.Visible = false restoreButton.Position = menuToIconPosition(menuAnchor) restoreButton.Size = UDim2.fromOffset(4, 4) restoreButton.Visible = true
-	TweenService:Create(restoreButton, TweenInfo.new(0.42, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = CLOSED_SIZE }):Play()
-	minimized = true menuAnimating = false
+
+local HomePage = CreatePage("HOME")
+local MovementPage = CreatePage("MOVEMENT")
+local FunPage = CreatePage("FUN")
+local VisualPage = CreatePage("VISUAL")
+local PlayerPage = CreatePage("PLAYER")
+local TrollPage = CreatePage("TROLL")
+local CustomPage = CreatePage("CUSTOM")
+
+
+--// =========================================================
+--// SECTION
+--// =========================================================
+
+local function CreateSection(page, text)
+
+	local label = Instance.new("TextLabel")
+
+	label.Size = UDim2.new(1, -6, 0, 25)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.GothamBold
+	label.Text = string.upper(text)
+	label.TextSize = 10
+	label.TextColor3 = Theme.Subtext
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.ZIndex = 225
+	label.Parent = page
+
+	table.insert(Sections, label)
+
+	return label
 end
-closeButton.Activated:Connect(closeMenu)
-restoreButton.Activated:Connect(function() if skipNextRestore then skipNextRestore = false return end if not menuAnimating then openMenu() end end)
 
-local dragging, dragStart, startPos = false, nil, nil
-header.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = true dragStart = input.Position startPos = menu.Position end end)
-UserInputService.InputChanged:Connect(function(input) if not dragging then return end if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then return end local delta = input.Position - dragStart menu.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y) end)
-UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end end)
 
-local tabBar = Instance.new("Frame", menu) tabBar.Position = UDim2.fromOffset(13, 69) tabBar.Size = UDim2.new(1, -26, 0, 40) tabBar.BackgroundColor3 = Color3.fromRGB(20, 21, 29) tabBar.BackgroundTransparency = 0.15 tabBar.BorderSizePixel = 0 tabBar.ZIndex = 12
-Instance.new("UICorner", tabBar).CornerRadius = UDim.new(0, 12)
-local function createTab(text, pos)
-	local b = Instance.new("TextButton", tabBar) b.Size = UDim2.new(1/3, -6, 1, 0) b.Position = pos b.BackgroundColor3 = COLORS.button b.BorderSizePixel = 0 b.AutoButtonColor = false b.Font = Enum.Font.GothamBold b.Text = text b.TextSize = 10 b.TextColor3 = COLORS.subtext b.ZIndex = 14
-	Instance.new("UICorner", b).CornerRadius = UDim.new(0, 10) return b
-end
-local combatTab = createTab("COMBAT", UDim2.fromOffset(4, 4))
-local funTab = createTab("FUN", UDim2.new(1/3, 2, 0, 4))
-local customTab = createTab("CUSTOM", UDim2.new(2/3, 0, 0, 4))
+--// =========================================================
+--// BUTTON
+--// =========================================================
 
-local pageArea = Instance.new("Frame", menu) pageArea.Position = UDim2.fromOffset(13, 119) pageArea.Size = UDim2.new(1, -26, 1, -128) pageArea.BackgroundTransparency = 1 pageArea.ClipsDescendants = true pageArea.ZIndex = 8
-local function createPage()
-	local p = Instance.new("ScrollingFrame", pageArea) p.Size = UDim2.fromScale(1, 1) p.Position = UDim2.fromScale(0, 0) p.BackgroundTransparency = 1 p.BorderSizePixel = 0 p.ScrollBarThickness = 3 p.ScrollBarImageColor3 = ACTIVE_COLOR p.ScrollBarImageTransparency = 0.65 p.CanvasSize = UDim2.new() p.AutomaticCanvasSize = Enum.AutomaticSize.Y p.ScrollingDirection = Enum.ScrollingDirection.Y p.ZIndex = 9
-	local pad = Instance.new("UIPadding", p) pad.PaddingTop = UDim.new(0, 4) pad.PaddingBottom = UDim.new(0, 12) pad.PaddingLeft = UDim.new(0, 2) pad.PaddingRight = UDim.new(0, 2)
-	local lay = Instance.new("UIListLayout", p) lay.Padding = UDim.new(0, 8) lay.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	return p
-end
-local combatPage = createPage()
-local funPage = createPage() funPage.Visible = false
-local customPage = createPage() customPage.Visible = false
+local function CreateButton(page, text, callback)
 
-local allButtons = {}
-local function createButton(page, text)
-	local b = Instance.new("TextButton", page) b.Size = UDim2.new(1, -8, 0, 46) b.BackgroundColor3 = COLORS.button b.BackgroundTransparency = 0.12 b.BorderSizePixel = 0 b.AutoButtonColor = false b.Font = Enum.Font.GothamMedium b.Text = text b.TextSize = 13 b.TextColor3 = COLORS.text b.ZIndex = 12
-	Instance.new("UICorner", b).CornerRadius = UDim.new(0, 12)
-	local s = Instance.new("UIStroke", b) s.Color = COLORS.border s.Thickness = 1 s.Transparency = 0.82
-	local sc = Instance.new("UIScale", b) sc.Scale = 1
-	b.Activated:Connect(function()
-		TweenService:Create(sc, TweenInfo.new(0.08, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), { Scale = 0.965 }):Play()
-		task.delay(0.08, function() if sc.Parent then TweenService:Create(sc, TweenInfo.new(0.30, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play() end end)
+	local button = Instance.new("TextButton")
+
+	button.Size = UDim2.new(1, -6, 0, 43)
+	button.BackgroundColor3 = Theme.Button
+	button.BackgroundTransparency = 0.08
+	button.BorderSizePixel = 0
+	button.AutoButtonColor = false
+	button.Font = Enum.Font.GothamMedium
+	button.Text = text
+	button.TextSize = 12
+	button.TextColor3 = Theme.Text
+	button.ZIndex = 230
+	button.Parent = page
+
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 11)
+	corner.Parent = button
+
+
+	local stroke = Instance.new("UIStroke")
+
+	stroke.Color = Theme.Border
+	stroke.Transparency = 0.78
+	stroke.Thickness = 1
+	stroke.Parent = button
+
+
+	button:SetAttribute(
+		"SearchText",
+		string.lower(text)
+	)
+
+	button:SetAttribute(
+		"Enabled",
+		false
+	)
+
+
+	button.MouseEnter:Connect(function()
+
+		local enabled =
+			button:GetAttribute("Enabled")
+
+		if enabled then
+			return
+		end
+
+		tween(
+			button,
+			TweenInfo.new(0.12),
+			{
+				BackgroundColor3 =
+					Theme.ButtonHover
+			}
+		)
 	end)
-	b.MouseEnter:Connect(function() TweenService:Create(b, TweenInfo.new(0.15), { BackgroundColor3 = COLORS.buttonHover }):Play() TweenService:Create(s, TweenInfo.new(0.15), { Transparency = 0.55 }):Play() end)
-	b.MouseLeave:Connect(function() local en = b:GetAttribute("Enabled") TweenService:Create(b, TweenInfo.new(0.18), { BackgroundColor3 = en and ACTIVE_COLOR or COLORS.button }):Play() TweenService:Create(s, TweenInfo.new(0.18), { Transparency = en and 0.26 or 0.82 }):Play() end)
-	table.insert(allButtons, b) return b
+
+
+	button.MouseLeave:Connect(function()
+
+		local enabled =
+			button:GetAttribute("Enabled")
+
+		tween(
+			button,
+			TweenInfo.new(0.15),
+			{
+				BackgroundColor3 =
+					enabled
+					and Theme.Accent
+					or Theme.Button
+			}
+		)
+	end)
+
+
+	button.Activated:Connect(function()
+
+		tween(
+			button,
+			TweenInfo.new(0.07),
+			{
+				Size = UDim2.new(
+					1,
+					-10,
+					0,
+					State.CompactMode
+					and 28
+					or 41
+				)
+			}
+		)
+
+
+		task.delay(0.08, function()
+
+			if not button.Parent then
+				return
+			end
+
+			tween(
+				button,
+				TweenInfo.new(
+					0.18,
+					Enum.EasingStyle.Back,
+					Enum.EasingDirection.Out
+				),
+				{
+					Size = UDim2.new(
+						1,
+						-6,
+						0,
+						State.CompactMode
+						and 30
+						or 43
+					)
+				}
+			)
+		end)
+
+
+		safeCall(callback, button)
+
+		CreateToast(
+			"TBAM",
+			button.Text,
+			1.4
+		)
+	end)
+
+
+	table.insert(
+		Buttons,
+		{
+			Object = button,
+			Stroke = stroke
+		}
+	)
+
+	return button
 end
 
-local function animateButton(button, enabled)
+
+--// =========================================================
+--// BUTTON STATE
+--// =========================================================
+
+local function SetButtonState(button, enabled)
+
+	if not button or not button.Parent then
+		return
+	end
+
 	button:SetAttribute("Enabled", enabled)
-	TweenService:Create(button, TweenInfo.new(0.24, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), { BackgroundColor3 = enabled and ACTIVE_COLOR or COLORS.button }):Play()
-	local stroke = button:FindFirstChildOfClass("UIStroke")
-	if stroke then TweenService:Create(stroke, TweenInfo.new(0.25), { Transparency = enabled and 0.26 or 0.82 }):Play() end
+
+	tween(
+		button,
+		TweenInfo.new(0.18),
+		{
+			BackgroundColor3 =
+				enabled
+				and Theme.Accent
+				or Theme.Button
+		}
+	)
+
+
+	for _, entry in ipairs(Buttons) do
+
+		if entry.Object == button then
+
+			tween(
+				entry.Stroke,
+				TweenInfo.new(0.18),
+				{
+					Transparency =
+						enabled
+						and 0.25
+						or 0.78
+				}
+			)
+
+			break
+		end
+	end
 end
 
--- BUTTONS (COMBAT)
-local espButton = createButton(combatPage, "ESP  •  OFF") espButton.Activated:Connect(function() ESP_ENABLED = not ESP_ENABLED espButton.Text = "ESP  •  " .. (ESP_ENABLED and "ON" or "OFF") animateButton(espButton, ESP_ENABLED) end)
-local aimButton = createButton(combatPage, "AIMBOT  •  OFF") aimButton.Activated:Connect(function() AIM_ENABLED = not AIM_ENABLED if not AIM_ENABLED then currentAimTarget = nil end aimButton.Text = "AIMBOT  •  " .. (AIM_ENABLED and "ON" or "OFF") animateButton(aimButton, AIM_ENABLED) end)
-local speedButton = createButton(combatPage, "SPEED  •  OFF") speedButton.Activated:Connect(function() if not SPEED_ENABLED then SPEED_ENABLED = true SPEED_INDEX = 1 else SPEED_INDEX += 1 if SPEED_INDEX > #SPEED_VALUES then SPEED_ENABLED = false SPEED_INDEX = 1 end end CURRENT_SPEED = SPEED_VALUES[SPEED_INDEX] applySpeed() speedButton.Text = "SPEED  •  " .. (SPEED_ENABLED and tostring(CURRENT_SPEED) or "OFF") animateButton(speedButton, SPEED_ENABLED) end)
-local jumpButton = createButton(combatPage, "JUMP  •  OFF") jumpButton.Activated:Connect(function() if not JUMP_ENABLED then JUMP_ENABLED = true JUMP_INDEX = 1 else JUMP_INDEX += 1 if JUMP_INDEX > #JUMP_VALUES then JUMP_ENABLED = false JUMP_INDEX = 1 end end CURRENT_JUMP = JUMP_VALUES[JUMP_INDEX] applyJump() jumpButton.Text = "JUMP  •  " .. (JUMP_ENABLED and tostring(CURRENT_JUMP) or "OFF") animateButton(jumpButton, JUMP_ENABLED) end)
-local noclipButton = createButton(combatPage, "NOCLIP  •  OFF") noclipButton.Activated:Connect(function() NOCLIP_ENABLED = not NOCLIP_ENABLED noclipButton.Text = "NOCLIP  •  " .. (NOCLIP_ENABLED and "ON" or "OFF") animateButton(noclipButton, NOCLIP_ENABLED) end)
-local godModeButton = createButton(combatPage, "GODMODE  •  OFF") godModeButton.Activated:Connect(function() GODMODE_ENABLED = not GODMODE_ENABLED if GODMODE_ENABLED then setupGodMode() else disableGodMode() end godModeButton.Text = "GODMODE  •  " .. (GODMODE_ENABLED and "ON" or "OFF") animateButton(godModeButton, GODMODE_ENABLED) end)
-local flyButton = createButton(combatPage, "FLY  •  OFF") flyButton.Activated:Connect(function() if not FLY_ENABLED then FLY_ENABLED = true FLY_INDEX = 1 else FLY_INDEX += 1 if FLY_INDEX > #FLY_VALUES then FLY_ENABLED = false FLY_INDEX = 0 CURRENT_FLY_SPEED = 0 cleanupFly() end end if FLY_ENABLED then CURRENT_FLY_SPEED = FLY_VALUES[FLY_INDEX] flyButton.Text = "FLY  •  " .. tostring(CURRENT_FLY_SPEED) setupFly() else flyButton.Text = "FLY  •  OFF" end animateButton(flyButton, FLY_ENABLED) end)
-local antiKickButton = createButton(combatPage, "ANTI-KICK  •  ON") animateButton(antiKickButton, true) antiKickButton.Activated:Connect(function() ANTI_KICK_ENABLED = not ANTI_KICK_ENABLED antiKickButton.Text = "ANTI-KICK  •  " .. (ANTI_KICK_ENABLED and "ON" or "OFF") animateButton(antiKickButton, ANTI_KICK_ENABLED) end)
-local fovButton = createButton(combatPage, "FOV  •  250") fovButton.Activated:Connect(function() if FOV == 250 then FOV = 175 elseif FOV == 175 then FOV = 100 else FOV = 250 end fovButton.Text = "FOV  •  " .. tostring(FOV) end)
 
--- BUTTONS (FUN)
-local spinButton = createButton(funPage, "SPIN  •  OFF") spinButton.Activated:Connect(function() SPIN_ENABLED = not SPIN_ENABLED spinButton.Text = "SPIN  •  " .. (SPIN_ENABLED and "ON" or "OFF") animateButton(spinButton, SPIN_ENABLED) end)
-local gravityButton = createButton(funPage, "ZERO GRAVITY  •  OFF") gravityButton.Activated:Connect(function() ZERO_GRAVITY_ENABLED = not ZERO_GRAVITY_ENABLED gravityButton.Text = "ZERO GRAVITY  •  " .. (ZERO_GRAVITY_ENABLED and "ON" or "OFF") animateButton(gravityButton, ZERO_GRAVITY_ENABLED) if ZERO_GRAVITY_ENABLED then setupZeroG() else cleanupZeroG() end end)
-local launchButton = createButton(funPage, "LAUNCH  UP") launchButton.Activated:Connect(function() local root = getRoot(getCharacter()) if root then root.AssemblyLinearVelocity = Vector3.new(0, 120, 0) end TweenService:Create(launchButton, TweenInfo.new(0.18), { BackgroundColor3 = ACTIVE_COLOR }):Play() task.delay(0.25, function() if launchButton.Parent then TweenService:Create(launchButton, TweenInfo.new(0.35), { BackgroundColor3 = COLORS.button }):Play() end end) end)
-local resetButton = createButton(funPage, "RESET FUN EFFECTS") resetButton.Activated:Connect(function() SPIN_ENABLED = false ZERO_GRAVITY_ENABLED = false cleanupZeroG() spinButton.Text = "SPIN  •  OFF" gravityButton.Text = "ZERO GRAVITY  •  OFF" animateButton(spinButton, false) animateButton(gravityButton, false) end)
+--// =========================================================
+--// NAV BUTTON
+--// =========================================================
 
--- BUTTONS (CUSTOM)
-local colorTitle = createButton(customPage, "ACTIVE BUTTON COLOR") colorTitle.TextSize = 12 colorTitle.BackgroundColor3 = COLORS.panel
-for _, preset in ipairs(COLOR_PRESETS) do
-	local button = createButton(customPage, preset.name) button.BackgroundColor3 = preset.color button.TextColor3 = Color3.fromRGB(255, 255, 255)
-	button.Activated:Connect(function() ACTIVE_COLOR = preset.color refreshButtonColors() end)
+local function CreateNavButton(name, icon)
+
+	local button = Instance.new("TextButton")
+
+	button.Size = UDim2.new(1, -2, 0, 37)
+	button.BackgroundColor3 = Theme.Button
+	button.BackgroundTransparency = 1
+	button.BorderSizePixel = 0
+	button.AutoButtonColor = false
+	button.Font = Enum.Font.GothamBold
+
+	button.Text =
+		icon
+		.. "  "
+		.. name
+
+	button.TextSize = 11
+	button.TextColor3 = Theme.Subtext
+	button.TextXAlignment = Enum.TextXAlignment.Left
+	button.ZIndex = 240
+	button.Parent = Sidebar
+
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 10)
+	corner.Parent = button
+
+
+	NavButtons[name] = button
+
+	return button
 end
-local fovToggle = createButton(customPage, "FOV CIRCLE  •  ON") fovToggle.Activated:Connect(function() FOV_VISIBLE = not FOV_VISIBLE fovToggle.Text = "FOV CIRCLE  •  " .. (FOV_VISIBLE and "ON" or "OFF") animateButton(fovToggle, FOV_VISIBLE) end)
-local glowToggle = createButton(customPage, "BACKGROUND GLOW  •  ON") glowToggle.Activated:Connect(function() GLOW_ENABLED = not GLOW_ENABLED glowToggle.Text = "BACKGROUND GLOW  •  " .. (GLOW_ENABLED and "ON" or "OFF") animateButton(glowToggle, GLOW_ENABLED) end)
-local resetCustomization = createButton(customPage, "RESET CUSTOMIZATION") resetCustomization.Activated:Connect(function() ACTIVE_COLOR = DEFAULT_ACTIVE_COLOR FOV_VISIBLE = true GLOW_ENABLED = true fovToggle.Text = "FOV CIRCLE  •  ON" glowToggle.Text = "BACKGROUND GLOW  •  ON" animateButton(fovToggle, true) animateButton(glowToggle, true) refreshButtonColors() end)
 
-local switchingTab = false
-local function styleTabs(tab) local function style(b, act, col) TweenService:Create(b, TweenInfo.new(0.22), { BackgroundColor3 = act and col or COLORS.button, TextColor3 = act and COLORS.text or COLORS.subtext }):Play() end style(combatTab, tab == "Combat", COLORS.blue) style(funTab, tab == "Fun", COLORS.purple) style(customTab, tab == "Custom", ACTIVE_COLOR) end
-local function switchTab(tab)
-	if switchingTab or tab == activeTab then return end switchingTab = true
-	local pages = { Combat = combatPage, Fun = funPage, Custom = customPage } local order = { Combat = 1, Fun = 2, Custom = 3 }
-	local oldPage, newPage = pages[activeTab], pages[tab] local dir = order[tab] > order[activeTab] and 1 or -1
-	newPage.Visible = true newPage.Position = UDim2.new(dir, dir * 15, 0, 0)
-	TweenService:Create(oldPage, TweenInfo.new(0.24, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut), { Position = UDim2.new(-dir, -dir * 15, 0, 0) }):Play()
-	local inc = TweenService:Create(newPage, TweenInfo.new(0.30, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Position = UDim2.fromScale(0, 0) }) inc:Play() inc.Completed:Wait()
-	oldPage.Visible = false oldPage.Position = UDim2.fromScale(0, 0) activeTab = tab styleTabs(tab) switchingTab = false
+
+CreateNavButton("HOME", "⌂")
+CreateNavButton("MOVEMENT", "◆")
+CreateNavButton("FUN", "✦")
+CreateNavButton("VISUAL", "◉")
+CreateNavButton("PLAYER", "◎")
+CreateNavButton("TROLL", "☠")
+CreateNavButton("CUSTOM", "⚙")
+
+
+--// =========================================================
+--// TROLL HELPERS
+--// =========================================================
+
+local function ClearTrollHighlightInternal()
+
+	if TrollHighlight then
+
+		pcall(function()
+			TrollHighlight:Destroy()
+		end)
+
+		TrollHighlight = nil
+	end
 end
-styleTabs("Combat")
-combatTab.Activated:Connect(function() switchTab("Combat") end) funTab.Activated:Connect(function() switchTab("Fun") end) customTab.Activated:Connect(function() switchTab("Custom") end)
 
-local fovCircle = Instance.new("Frame", gui) fovCircle.Name = "TBAM_FOV" fovCircle.AnchorPoint = Vector2.new(0.5, 0.5) fovCircle.BackgroundTransparency = 1 fovCircle.BorderSizePixel = 0 fovCircle.ZIndex = 30
-Instance.new("UICorner", fovCircle).CornerRadius = UDim.new(1, 0)
-local fovStroke = Instance.new("UIStroke", fovCircle) fovStroke.Color = ACTIVE_COLOR fovStroke.Transparency = 0.45 fovStroke.Thickness = 1.25
-local fovScale = Instance.new("UIScale", fovCircle) fovScale.Scale = 0
-local lastFOVState = false
-RunService.RenderStepped:Connect(function()
-	local camera = getCamera() if not camera then return end
-	fovCircle.Position = UDim2.fromOffset(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2) fovCircle.Size = UDim2.fromOffset(FOV * 2, FOV * 2) fovStroke.Color = ACTIVE_COLOR
-	local shouldShow = AIM_ENABLED and FOV_VISIBLE
-	if shouldShow ~= lastFOVState then
-		lastFOVState = shouldShow
-		if shouldShow then fovCircle.Visible = true TweenService:Create(fovScale, TweenInfo.new(0.20, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
-		else TweenService:Create(fovScale, TweenInfo.new(0.16, Enum.EasingStyle.Quart, Enum.EasingDirection.In), { Scale = 0 }):Play() task.delay(0.16, function() if not (AIM_ENABLED and FOV_VISIBLE) then fovCircle.Visible = false end end) end
+ClearTrollHighlight = ClearTrollHighlightInternal
+
+
+local function SetTrollTargetInternal(target)
+
+	if not target or not isValidTrollTarget(target) then
+
+		TrollTarget = nil
+		State.SelectedPlayer = nil
+		State.TrollTargetName = ""
+
+		if TargetInfoLabel then
+			TargetInfoLabel.Text = "TARGET  •  NONE"
+		end
+
+		if TargetStatsLabel then
+			TargetStatsLabel.Text = "DISTANCE • -- | SPEED • -- | HP • --"
+		end
+
+		ClearTrollHighlight()
+
+		return
+	end
+
+
+	TrollTarget = target
+
+
+	State.SelectedPlayer =
+		Players:GetPlayerFromCharacter(target)
+
+
+	State.TrollTargetName = target.Name
+
+
+	local player =
+		Players:GetPlayerFromCharacter(target)
+
+
+	if TargetInfoLabel then
+
+		if player then
+
+			TargetInfoLabel.Text =
+				"TARGET  •  PLAYER  •  "
+				.. player.Name
+
+		else
+
+			TargetInfoLabel.Text =
+				"TARGET  •  BOT  •  "
+				.. target.Name
+		end
+	end
+
+
+	ClearTrollHighlight()
+
+
+	if State.TrollESP then
+
+		TrollHighlight = Instance.new("Highlight")
+
+		TrollHighlight.Name =
+			"TBAM_TrollHighlight"
+
+		TrollHighlight.Adornee =
+			target
+
+		TrollHighlight.DepthMode =
+			Enum.HighlightDepthMode.AlwaysOnTop
+
+		TrollHighlight.FillTransparency = 0.55
+		TrollHighlight.OutlineTransparency = 0
+
+		TrollHighlight.FillColor =
+			Theme.Accent
+
+		TrollHighlight.OutlineColor =
+			Theme.Text
+
+		TrollHighlight.Parent = target
+	end
+end
+
+SetTrollTarget = SetTrollTargetInternal
+
+
+local function GetAllTrollTargets()
+
+	local results = {}
+	local seen = {}
+
+
+	for _, player in ipairs(Players:GetPlayers()) do
+
+		local character = player.Character
+
+		if
+			player ~= LocalPlayer
+			and character
+			and isValidTrollTarget(character)
+		then
+
+			if not seen[character] then
+
+				seen[character] = true
+
+				table.insert(
+					results,
+					{
+						Model = character,
+						Name = player.Name,
+						Type = "PLAYER",
+						Display =
+							"PLAYER  •  "
+							.. player.Name
+					}
+				)
+			end
+		end
+	end
+
+
+	for _, object in ipairs(
+		Workspace:GetDescendants()
+	) do
+
+		if
+			object:IsA("Model")
+			and object ~= getCharacter()
+			and not Players:GetPlayerFromCharacter(object)
+			and not seen[object]
+			and isValidTrollTarget(object)
+		then
+
+			seen[object] = true
+
+			table.insert(
+				results,
+				{
+					Model = object,
+					Name = object.Name,
+					Type = "BOT",
+					Display =
+						"BOT  •  "
+						.. object.Name
+				}
+			)
+		end
+	end
+
+
+	table.sort(
+		results,
+		function(a, b)
+
+			if a.Type == b.Type then
+
+				return string.lower(a.Name)
+					<
+					string.lower(b.Name)
+
+			end
+
+			return a.Type == "PLAYER"
+		end
+	)
+
+
+	return results
+end
+
+
+local function RefreshTargetListInternal()
+
+	if not TargetList or not TargetList.Parent then
+		return
+	end
+
+
+	for _, child in ipairs(TargetList:GetChildren()) do
+
+		if
+			child:IsA("TextButton")
+			or child:IsA("TextLabel")
+		then
+			child:Destroy()
+		end
+	end
+
+
+	TargetButtons = {}
+
+
+	local targets = GetAllTrollTargets()
+
+
+	if #targets == 0 then
+
+		local empty = Instance.new("TextLabel")
+
+		empty.Size = UDim2.new(1, -4, 0, 40)
+		empty.BackgroundTransparency = 1
+		empty.Text = "NO PLAYERS / BOTS FOUND"
+		empty.Font = Enum.Font.GothamMedium
+		empty.TextSize = 10
+		empty.TextColor3 = Theme.Subtext
+		empty.ZIndex = 420
+		empty.Parent = TargetList
+
+		return
+	end
+
+
+	for _, targetData in ipairs(targets) do
+
+		local targetButton =
+			Instance.new("TextButton")
+
+		targetButton.Size =
+			UDim2.new(1, -4, 0, 37)
+
+		targetButton.BackgroundColor3 =
+			targetData.Type == "PLAYER"
+			and Theme.Button
+			or Theme.Panel
+
+		targetButton.BackgroundTransparency = 0.08
+		targetButton.BorderSizePixel = 0
+		targetButton.AutoButtonColor = false
+		targetButton.Font = Enum.Font.GothamMedium
+		targetButton.Text = targetData.Display
+		targetButton.TextSize = 10
+		targetButton.TextColor3 = Theme.Text
+		targetButton.TextXAlignment = Enum.TextXAlignment.Left
+		targetButton.ZIndex = 430
+		targetButton.Parent = TargetList
+
+
+		local padding = Instance.new("UIPadding")
+
+		padding.PaddingLeft = UDim.new(0, 10)
+		padding.Parent = targetButton
+
+
+		local corner = Instance.new("UICorner")
+
+		corner.CornerRadius = UDim.new(0, 9)
+		corner.Parent = targetButton
+
+
+		local targetModel = targetData.Model
+		local targetType = targetData.Type
+
+
+		TargetButtons[targetModel] =
+			targetButton
+
+
+		targetButton.Activated:Connect(function()
+
+			SetTrollTarget(targetModel)
+
+			CreateToast(
+				"TROLL TARGET",
+				targetData.Display
+					.. " selecionado.",
+				1.5
+			)
+
+
+			for model, btn in pairs(TargetButtons) do
+
+				if btn.Parent then
+
+					local isSelected =
+						model == TrollTarget
+
+					local data =
+						nil
+
+					for _, searchData in ipairs(targets) do
+						if searchData.Model == model then
+							data = searchData
+							break
+						end
+					end
+
+					local fallbackType =
+						data
+						and data.Type
+						or "BOT"
+
+					btn.BackgroundColor3 =
+						isSelected
+						and Theme.Accent
+						or (
+							fallbackType == "PLAYER"
+							and Theme.Button
+							or Theme.Panel
+						)
+				end
+			end
+		end)
+
+
+		targetButton.MouseEnter:Connect(function()
+
+			if TrollTarget == targetModel then
+				return
+			end
+
+			tween(
+				targetButton,
+				TweenInfo.new(0.12),
+				{
+					BackgroundColor3 =
+						Theme.ButtonHover
+				}
+			)
+		end)
+
+
+		targetButton.MouseLeave:Connect(function()
+
+			local selected =
+				TrollTarget == targetModel
+
+			tween(
+				targetButton,
+				TweenInfo.new(0.12),
+				{
+					BackgroundColor3 =
+						selected
+						and Theme.Accent
+						or (
+							targetType == "PLAYER"
+							and Theme.Button
+							or Theme.Panel
+						)
+				}
+			)
+		end)
+	end
+end
+
+RefreshTargetList = RefreshTargetListInternal
+
+
+--// =========================================================
+--// NAVIGATION
+--// =========================================================
+
+local function SwitchPage(name)
+
+	local page = Pages[name]
+
+	if not page then
+		return
+	end
+
+	State.ActivePage = name
+
+
+	for pageName, otherPage in pairs(Pages) do
+
+		local active =
+			pageName == name
+
+		otherPage.Visible = active
+
+		if active then
+
+			otherPage.Position =
+				UDim2.fromOffset(14, 0)
+
+			tween(
+				otherPage,
+				TweenInfo.new(
+					0.2,
+					Enum.EasingStyle.Quart,
+					Enum.EasingDirection.Out
+				),
+				{
+					Position =
+						UDim2.fromOffset(0, 0)
+				}
+			)
+		end
+	end
+
+
+	for navName, navButton in pairs(NavButtons) do
+
+		local active =
+			navName == name
+
+		navButton.BackgroundTransparency =
+			active and 0 or 1
+
+		navButton.BackgroundColor3 =
+			active
+			and Theme.Accent
+			or Theme.Button
+
+		navButton.TextColor3 =
+			active
+			and Theme.Text
+			or Theme.Subtext
+	end
+
+
+	SearchBox.Text = ""
+
+
+	if name == "TROLL" then
+
+		task.defer(function()
+			pcall(RefreshTargetList)
+		end)
+	end
+end
+
+
+for name, button in pairs(NavButtons) do
+
+	button.Activated:Connect(function()
+		SwitchPage(name)
+	end)
+end
+
+
+--// =========================================================
+--// HOME
+--// =========================================================
+
+CreateSection(
+	HomePage,
+	"DASHBOARD"
+)
+
+
+CreateButton(
+	HomePage,
+	"TBAM  •  AERO ADMIN / TEST PANEL",
+	function()
+		CreateToast(
+			"TBAM",
+			"Painel carregado corretamente.",
+			2
+		)
+	end
+)
+
+
+local ActiveCounter =
+	CreateButton(
+		HomePage,
+		"ACTIVE FEATURES  •  0",
+		function()
+			CreateToast(
+				"TBAM",
+				"Mostrando o estado das funções.",
+				1.5
+			)
+		end
+	)
+
+
+local FPSButton =
+	CreateButton(
+		HomePage,
+		"FPS  •  0",
+		function()
+			CreateToast(
+				"PERFORMANCE",
+				"FPS atual: "
+					.. tostring(State.FPS),
+				1.5
+			)
+		end
+	)
+
+
+local PingButton =
+	CreateButton(
+		HomePage,
+		"PING  •  --",
+		function()
+			CreateToast(
+				"NETWORK",
+				"Ping: "
+					.. tostring(State.Ping)
+					.. " ms",
+				1.5
+			)
+		end
+	)
+
+
+local MemoryButton =
+	CreateButton(
+		HomePage,
+		"MEMORY  •  -- MB",
+		function()
+			CreateToast(
+				"MEMORY",
+				"Uso estimado: "
+					.. tostring(State.Memory)
+					.. " MB",
+				1.5
+			)
+		end
+	)
+
+
+CreateButton(
+	HomePage,
+	"SERVER FLING BRIDGE  •  CHECK",
+	function()
+		if hasServerFlingBridge() then
+			CreateToast(
+				"SERVER",
+				"TBAM_Remote encontrado.",
+				2
+			)
+		else
+			CreateToast(
+				"SERVER",
+				"TBAM_Remote não encontrado.",
+				2
+			)
+		end
+	end
+)
+
+
+local ResetEverythingButton =
+	CreateButton(
+		HomePage,
+		"RESET ALL LOCAL TEST EFFECTS",
+		function()
+
+			State.SpeedEnabled = false
+			State.JumpEnabled = false
+			State.FlyEnabled = false
+			State.NoclipEnabled = false
+			State.InfiniteJump = false
+			State.ZeroGravity = false
+			State.PlatformStand = false
+			State.Spin = false
+
+			State.Rainbow = false
+			State.Trail = false
+			State.Particles = false
+			State.BigHead = false
+
+			State.Fullbright = false
+			State.NightMode = false
+			State.VividMode = false
+
+			State.TrollFollow = false
+			State.TrollSpectate = false
+			State.TrollESP = false
+			State.TrollSpin = false
+			State.TrollFreeze = false
+
+
+			Workspace.Gravity =
+				Original.Gravity
+
+
+			local character = getCharacter()
+
+			local humanoid =
+				getHumanoid(character)
+
+			local root =
+				getRoot(character)
+
+
+			if humanoid then
+
+				humanoid.WalkSpeed =
+					Original.WalkSpeed
+
+				humanoid.UseJumpPower =
+					true
+
+				humanoid.JumpPower =
+					Original.JumpPower
+
+				humanoid.JumpHeight =
+					Original.JumpHeight
+
+				humanoid.PlatformStand =
+					false
+
+				humanoid.AutoRotate =
+					true
+			end
+
+
+			if root then
+
+				root.AssemblyLinearVelocity =
+					Vector3.zero
+
+				root.AssemblyAngularVelocity =
+					Vector3.zero
+			end
+
+
+			Lighting.Brightness =
+				Original.Lighting.Brightness
+
+			Lighting.Ambient =
+				Original.Lighting.Ambient
+
+			Lighting.OutdoorAmbient =
+				Original.Lighting.OutdoorAmbient
+
+			Lighting.ClockTime =
+				Original.Lighting.ClockTime
+
+			Lighting.ExposureCompensation =
+				Original.Lighting.ExposureCompensation
+
+
+			if TrailObject then
+				TrailObject:Destroy()
+				TrailObject = nil
+			end
+
+			if TrailAttachment0 then
+				TrailAttachment0:Destroy()
+				TrailAttachment0 = nil
+			end
+
+			if TrailAttachment1 then
+				TrailAttachment1:Destroy()
+				TrailAttachment1 = nil
+			end
+
+			if ParticleObject then
+				ParticleObject:Destroy()
+				ParticleObject = nil
+			end
+
+			if FlyVelocity then
+				FlyVelocity:Destroy()
+				FlyVelocity = nil
+			end
+
+			if FlyOrientation then
+				FlyOrientation:Destroy()
+				FlyOrientation = nil
+			end
+
+			if FlyAttachment then
+				FlyAttachment:Destroy()
+				FlyAttachment = nil
+			end
+
+
+			ClearTrollHighlight()
+
+			TrollTarget = nil
+
+			State.SelectedPlayer = nil
+			State.TrollTargetName = ""
+
+
+			SpeedButton.Text =
+				"SPEED  •  OFF"
+
+			JumpButton.Text =
+				"JUMP  •  OFF"
+
+			FlyButton.Text =
+				"FLY  •  OFF"
+
+			FlySpeedButton.Text =
+				"FLY SPEED  •  20"
+
+			NoclipButton.Text =
+				"NOCLIP  •  OFF"
+
+			InfiniteJumpButton.Text =
+				"INFINITE JUMP  •  OFF"
+
+			GravityButton.Text =
+				"GRAVITY  •  196.2"
+
+			PlatformButton.Text =
+				"PLATFORM STAND  •  OFF"
+
+			SpinButton.Text =
+				"SPIN  •  OFF"
+
+			ZeroGravityButton.Text =
+				"ZERO GRAVITY  •  OFF"
+
+			RainbowButton.Text =
+				"RAINBOW CHARACTER  •  OFF"
+
+			TrailButton.Text =
+				"PLAYER TRAIL  •  OFF"
+
+			ParticleButton.Text =
+				"PARTICLE FX  •  OFF"
+
+			BigHeadButton.Text =
+				"BIG HEAD  •  OFF"
+
+			FullbrightButton.Text =
+				"FULLBRIGHT  •  OFF"
+
+			NightButton.Text =
+				"NIGHT MODE  •  OFF"
+
+			VividButton.Text =
+				"VIVID LIGHTING  •  OFF"
+
+
+			if SpectateButton then
+				SpectateButton.Text =
+					"SPECTATE POV  •  OFF"
+			end
+
+			if FollowButton then
+				FollowButton.Text =
+					"FOLLOW TARGET  •  OFF"
+			end
+
+			if TargetESPButton then
+				TargetESPButton.Text =
+					"TARGET ESP  •  OFF"
+			end
+
+			if SpinTargetButton then
+				SpinTargetButton.Text =
+					"SPIN TARGET  •  OFF"
+			end
+
+			if FreezeTargetButton then
+				FreezeTargetButton.Text =
+					"FREEZE TARGET  •  OFF"
+			end
+
+
+			if TargetInfoLabel then
+				TargetInfoLabel.Text =
+					"TARGET  •  NONE"
+			end
+
+
+			if TargetStatsLabel then
+				TargetStatsLabel.Text =
+					"DISTANCE • -- | SPEED • -- | HP • --"
+			end
+
+
+			for _, entry in ipairs(Buttons) do
+
+				entry.Object:SetAttribute(
+					"Enabled",
+					false
+				)
+
+				entry.Object.BackgroundColor3 =
+					Theme.Button
+
+				entry.Stroke.Transparency =
+					0.78
+			end
+
+
+			local camera = getCamera()
+
+			if camera then
+
+				camera.CameraType =
+					Enum.CameraType.Custom
+
+				if humanoid then
+					camera.CameraSubject =
+						humanoid
+				end
+
+				camera.FieldOfView =
+					Original.CameraFOV
+			end
+
+
+			CreateToast(
+				"TBAM",
+				"Todos os efeitos locais foram restaurados.",
+				2.2
+			)
+		end
+	)
+
+
+--// =========================================================
+--// MOVEMENT
+--// =========================================================
+
+CreateSection(
+	MovementPage,
+	"MOVEMENT"
+)
+
+
+SpeedButton =
+	CreateButton(
+		MovementPage,
+		"SPEED  •  OFF",
+		function(button)
+
+			if not State.SpeedEnabled then
+
+				State.SpeedEnabled = true
+				State.SpeedIndex = 1
+
+			else
+
+				State.SpeedIndex += 1
+
+				if State.SpeedIndex >
+					#CONFIG.SpeedValues then
+
+					State.SpeedEnabled = false
+					State.SpeedIndex = 1
+				end
+			end
+
+
+			local humanoid =
+				getHumanoid(
+					getCharacter()
+				)
+
+
+			if humanoid then
+
+				humanoid.WalkSpeed =
+					State.SpeedEnabled
+					and CONFIG.SpeedValues[
+						State.SpeedIndex
+					]
+					or Original.WalkSpeed
+			end
+
+
+			button.Text =
+				"SPEED  •  "
+				.. (
+					State.SpeedEnabled
+					and tostring(
+						CONFIG.SpeedValues[
+							State.SpeedIndex
+						]
+					)
+					or "OFF"
+				)
+
+
+			SetButtonState(
+				button,
+				State.SpeedEnabled
+			)
+		end
+	)
+
+
+JumpButton =
+	CreateButton(
+		MovementPage,
+		"JUMP  •  OFF",
+		function(button)
+
+			if not State.JumpEnabled then
+
+				State.JumpEnabled = true
+				State.JumpIndex = 1
+
+			else
+
+				State.JumpIndex += 1
+
+				if State.JumpIndex >
+					#CONFIG.JumpValues then
+
+					State.JumpEnabled = false
+					State.JumpIndex = 1
+				end
+			end
+
+
+			local humanoid =
+				getHumanoid(
+					getCharacter()
+				)
+
+
+			if humanoid then
+
+				humanoid.UseJumpPower = true
+
+				humanoid.JumpPower =
+					State.JumpEnabled
+					and CONFIG.JumpValues[
+						State.JumpIndex
+					]
+					or Original.JumpPower
+			end
+
+
+			button.Text =
+				"JUMP  •  "
+				.. (
+					State.JumpEnabled
+					and tostring(
+						CONFIG.JumpValues[
+							State.JumpIndex
+						]
+					)
+					or "OFF"
+				)
+
+
+			SetButtonState(
+				button,
+				State.JumpEnabled
+			)
+		end
+	)
+
+
+FlyButton =
+	CreateButton(
+		MovementPage,
+		"FLY  •  OFF",
+		function(button)
+
+			State.FlyEnabled =
+				not State.FlyEnabled
+
+
+			local character =
+				getCharacter()
+
+			local humanoid =
+				getHumanoid(character)
+
+			local root =
+				getRoot(character)
+
+
+			if not character
+				or not humanoid
+				or not root then
+
+				State.FlyEnabled = false
+
+				button.Text =
+					"FLY  •  OFF"
+
+				SetButtonState(
+					button,
+					false
+				)
+
+				return
+			end
+
+
+			if State.FlyEnabled then
+
+				if FlyVelocity then
+					FlyVelocity:Destroy()
+					FlyVelocity = nil
+				end
+
+				if FlyOrientation then
+					FlyOrientation:Destroy()
+					FlyOrientation = nil
+				end
+
+				if FlyAttachment then
+					FlyAttachment:Destroy()
+					FlyAttachment = nil
+				end
+
+
+				FlyAttachment =
+					Instance.new("Attachment")
+
+				FlyAttachment.Name =
+					"TBAM_FlyAttachment"
+
+				FlyAttachment.Parent =
+					root
+
+
+				FlyVelocity =
+					Instance.new("LinearVelocity")
+
+				FlyVelocity.Name =
+					"TBAM_FlyVelocity"
+
+				FlyVelocity.Attachment0 =
+					FlyAttachment
+
+				FlyVelocity.RelativeTo =
+					Enum.ActuatorRelativeTo.World
+
+				FlyVelocity.VelocityConstraintMode =
+					Enum.VelocityConstraintMode.Vector
+
+				FlyVelocity.MaxForce =
+					math.huge
+
+				FlyVelocity.VectorVelocity =
+					Vector3.zero
+
+				FlyVelocity.Parent =
+					root
+
+
+				FlyOrientation =
+					Instance.new("AlignOrientation")
+
+				FlyOrientation.Name =
+					"TBAM_FlyOrientation"
+
+				FlyOrientation.Attachment0 =
+					FlyAttachment
+
+				FlyOrientation.Mode =
+					Enum.OrientationAlignmentMode.OneAttachment
+
+				FlyOrientation.MaxTorque =
+					math.huge
+
+				FlyOrientation.Responsiveness =
+					100
+
+				FlyOrientation.Parent =
+					root
+
+
+				humanoid.AutoRotate = false
+				humanoid.PlatformStand = true
+
+			else
+
+				if FlyVelocity then
+					FlyVelocity:Destroy()
+					FlyVelocity = nil
+				end
+
+				if FlyOrientation then
+					FlyOrientation:Destroy()
+					FlyOrientation = nil
+				end
+
+				if FlyAttachment then
+					FlyAttachment:Destroy()
+					FlyAttachment = nil
+				end
+
+
+				humanoid.AutoRotate = true
+				humanoid.PlatformStand = false
+
+				root.AssemblyLinearVelocity =
+					Vector3.zero
+			end
+
+
+			button.Text =
+				"FLY  •  "
+				.. (
+					State.FlyEnabled
+					and "ON"
+					or "OFF"
+				)
+
+
+			SetButtonState(
+				button,
+				State.FlyEnabled
+			)
+		end
+	)
+
+
+FlySpeedButton =
+	CreateButton(
+		MovementPage,
+		"FLY SPEED  •  20",
+		function(button)
+
+			State.FlyIndex += 1
+
+			if State.FlyIndex >
+				#CONFIG.FlySpeeds then
+
+				State.FlyIndex = 1
+			end
+
+
+			button.Text =
+				"FLY SPEED  •  "
+				.. tostring(
+					CONFIG.FlySpeeds[
+						State.FlyIndex
+					]
+				)
+		end
+	)
+
+
+NoclipButton =
+	CreateButton(
+		MovementPage,
+		"NOCLIP  •  OFF",
+		function(button)
+
+			State.NoclipEnabled =
+				not State.NoclipEnabled
+
+
+			local character =
+				getCharacter()
+
+
+			if not character then
+
+				State.NoclipEnabled =
+					false
+
+				return
+			end
+
+
+			if State.NoclipEnabled then
+
+				NoclipSaved = {}
+
+				for _, part in ipairs(
+					character:GetDescendants()
+				) do
+
+					if part:IsA("BasePart") then
+
+						NoclipSaved[part] =
+							part.CanCollide
+
+						part.CanCollide = false
+					end
+				end
+
+			else
+
+				for part, savedValue in pairs(
+					NoclipSaved
+				) do
+
+					if part and part.Parent then
+						part.CanCollide =
+							savedValue
+					end
+				end
+
+				NoclipSaved = {}
+			end
+
+
+			button.Text =
+				"NOCLIP  •  "
+				.. (
+					State.NoclipEnabled
+					and "ON"
+					or "OFF"
+				)
+
+
+			SetButtonState(
+				button,
+				State.NoclipEnabled
+			)
+		end
+	)
+
+
+InfiniteJumpButton =
+	CreateButton(
+		MovementPage,
+		"INFINITE JUMP  •  OFF",
+		function(button)
+
+			State.InfiniteJump =
+				not State.InfiniteJump
+
+
+			button.Text =
+				"INFINITE JUMP  •  "
+				.. (
+					State.InfiniteJump
+					and "ON"
+					or "OFF"
+				)
+
+
+			SetButtonState(
+				button,
+				State.InfiniteJump
+			)
+		end
+	)
+
+
+GravityButton =
+	CreateButton(
+		MovementPage,
+		"GRAVITY  •  196.2",
+		function(button)
+
+			State.GravityIndex += 1
+
+			if State.GravityIndex >
+				#CONFIG.GravityValues then
+
+				State.GravityIndex = 1
+			end
+
+
+			local value =
+				CONFIG.GravityValues[
+					State.GravityIndex
+				]
+
+
+			Workspace.Gravity = value
+
+
+			button.Text =
+				"GRAVITY  •  "
+				.. tostring(value)
+		end
+	)
+
+
+PlatformButton =
+	CreateButton(
+		MovementPage,
+		"PLATFORM STAND  •  OFF",
+		function(button)
+
+			State.PlatformStand =
+				not State.PlatformStand
+
+
+			local humanoid =
+				getHumanoid(
+					getCharacter()
+				)
+
+
+			if humanoid then
+
+				humanoid.PlatformStand =
+					State.PlatformStand
+			end
+
+
+			button.Text =
+				"PLATFORM STAND  •  "
+				.. (
+					State.PlatformStand
+					and "ON"
+					or "OFF"
+				)
+
+
+			SetButtonState(
+				button,
+				State.PlatformStand
+			)
+		end
+	)
+
+
+CreateSection(
+	MovementPage,
+	"EXTRA"
+)
+
+
+CreateButton(
+	MovementPage,
+	"FAST RESET MOVEMENT",
+	function()
+
+		State.SpeedEnabled = false
+		State.JumpEnabled = false
+		State.FlyEnabled = false
+		State.NoclipEnabled = false
+		State.InfiniteJump = false
+		State.PlatformStand = false
+
+
+		local humanoid =
+			getHumanoid(
+				getCharacter()
+			)
+
+		local root =
+			getRoot(
+				getCharacter()
+			)
+
+
+		if humanoid then
+
+			humanoid.WalkSpeed =
+				Original.WalkSpeed
+
+			humanoid.UseJumpPower =
+				true
+
+			humanoid.JumpPower =
+				Original.JumpPower
+
+			humanoid.PlatformStand =
+				false
+
+			humanoid.AutoRotate =
+				true
+		end
+
+
+		if root then
+			root.AssemblyLinearVelocity =
+				Vector3.zero
+
+			root.AssemblyAngularVelocity =
+				Vector3.zero
+		end
+
+
+		if FlyVelocity then
+			FlyVelocity:Destroy()
+			FlyVelocity = nil
+		end
+
+		if FlyOrientation then
+			FlyOrientation:Destroy()
+			FlyOrientation = nil
+		end
+
+		if FlyAttachment then
+			FlyAttachment:Destroy()
+			FlyAttachment = nil
+		end
+
+
+		SpeedButton.Text = "SPEED  •  OFF"
+		JumpButton.Text = "JUMP  •  OFF"
+		FlyButton.Text = "FLY  •  OFF"
+		NoclipButton.Text = "NOCLIP  •  OFF"
+		InfiniteJumpButton.Text = "INFINITE JUMP  •  OFF"
+		PlatformButton.Text = "PLATFORM STAND  •  OFF"
+	end
+)
+
+
+--// =========================================================
+--// FUN
+--// =========================================================
+
+CreateSection(
+	FunPage,
+	"PHYSICS"
+)
+
+
+SpinButton =
+	CreateButton(
+		FunPage,
+		"SPIN  •  OFF",
+		function(button)
+
+			State.Spin =
+				not State.Spin
+
+			button.Text =
+				"SPIN  •  "
+				.. (
+					State.Spin
+					and "ON"
+					or "OFF"
+				)
+
+			SetButtonState(
+				button,
+				State.Spin
+			)
+		end
+	)
+
+
+SpinSpeedButton =
+	CreateButton(
+		FunPage,
+		"SPIN SPEED  •  360",
+		function(button)
+
+			State.SpinSpeed += 360
+
+			if State.SpinSpeed > 2160 then
+				State.SpinSpeed = 360
+			end
+
+			button.Text =
+				"SPIN SPEED  •  "
+				.. tostring(
+					State.SpinSpeed
+				)
+		end
+	)
+
+
+CreateButton(
+	FunPage,
+	"LAUNCH UP",
+	function()
+
+		local root =
+			getRoot(
+				getCharacter()
+			)
+
+		if root then
+
+			root.AssemblyLinearVelocity =
+				Vector3.new(
+					0,
+					120,
+					0
+				)
+		end
+	end
+)
+
+
+ZeroGravityButton =
+	CreateButton(
+		FunPage,
+		"ZERO GRAVITY  •  OFF",
+		function(button)
+
+			State.ZeroGravity =
+				not State.ZeroGravity
+
+			Workspace.Gravity =
+				State.ZeroGravity
+				and 0
+				or Original.Gravity
+
+
+			button.Text =
+				"ZERO GRAVITY  •  "
+				.. (
+					State.ZeroGravity
+					and "ON"
+					or "OFF"
+				)
+
+			SetButtonState(
+				button,
+				State.ZeroGravity
+			)
+		end
+	)
+
+
+CreateSection(
+	FunPage,
+	"CHARACTER EFFECTS"
+)
+
+
+RainbowButton =
+	CreateButton(
+		FunPage,
+		"RAINBOW CHARACTER  •  OFF",
+		function(button)
+
+			State.Rainbow =
+				not State.Rainbow
+
+			button.Text =
+				"RAINBOW CHARACTER  •  "
+				.. (
+					State.Rainbow
+					and "ON"
+					or "OFF"
+				)
+
+			SetButtonState(
+				button,
+				State.Rainbow
+			)
+		end
+	)
+
+
+TrailButton =
+	CreateButton(
+		FunPage,
+		"PLAYER TRAIL  •  OFF",
+		function(button)
+
+			State.Trail =
+				not State.Trail
+
+
+			local root =
+				getRoot(
+					getCharacter()
+				)
+
+
+			if not root then
+
+				State.Trail = false
+
+				button.Text =
+					"PLAYER TRAIL  •  OFF"
+
+				SetButtonState(
+					button,
+					false
+				)
+
+				return
+			end
+
+
+			if State.Trail then
+
+				if TrailObject then
+					TrailObject:Destroy()
+				end
+
+				if TrailAttachment0 then
+					TrailAttachment0:Destroy()
+				end
+
+				if TrailAttachment1 then
+					TrailAttachment1:Destroy()
+				end
+
+
+				TrailAttachment0 =
+					Instance.new("Attachment")
+
+				TrailAttachment1 =
+					Instance.new("Attachment")
+
+
+				TrailAttachment0.Position =
+					Vector3.new(0, 1, 0)
+
+				TrailAttachment1.Position =
+					Vector3.new(0, -1, 0)
+
+
+				TrailAttachment0.Parent = root
+				TrailAttachment1.Parent = root
+
+
+				TrailObject =
+					Instance.new("Trail")
+
+
+				TrailObject.Attachment0 =
+					TrailAttachment0
+
+				TrailObject.Attachment1 =
+					TrailAttachment1
+
+				TrailObject.Lifetime = 0.7
+				TrailObject.MinLength = 0.1
+				TrailObject.Parent = root
+
+			else
+
+				if TrailObject then
+					TrailObject:Destroy()
+					TrailObject = nil
+				end
+
+				if TrailAttachment0 then
+					TrailAttachment0:Destroy()
+					TrailAttachment0 = nil
+				end
+
+				if TrailAttachment1 then
+					TrailAttachment1:Destroy()
+					TrailAttachment1 = nil
+				end
+			end
+
+
+			button.Text =
+				"PLAYER TRAIL  •  "
+				.. (
+					State.Trail
+					and "ON"
+					or "OFF"
+				)
+
+			SetButtonState(
+				button,
+				State.Trail
+			)
+		end
+	)
+
+
+ParticleButton =
+	CreateButton(
+		FunPage,
+		"PARTICLE FX  •  OFF",
+		function(button)
+
+			State.Particles =
+				not State.Particles
+
+
+			local root =
+				getRoot(
+					getCharacter()
+				)
+
+
+			if not root then
+
+				State.Particles =
+					false
+
+				button.Text =
+					"PARTICLE FX  •  OFF"
+
+				SetButtonState(
+					button,
+					false
+				)
+
+				return
+			end
+
+
+			if State.Particles then
+
+				if ParticleObject then
+					ParticleObject:Destroy()
+				end
+
+
+				ParticleObject =
+					Instance.new(
+						"ParticleEmitter"
+					)
+
+				ParticleObject.Rate = 12
+
+				ParticleObject.Lifetime =
+					NumberRange.new(
+						0.5,
+						1.2
+					)
+
+				ParticleObject.Speed =
+					NumberRange.new(
+						1,
+						3
+					)
+
+				ParticleObject.SpreadAngle =
+					Vector2.new(360, 360)
+
+				ParticleObject.Parent =
+					root
+
+			else
+
+				if ParticleObject then
+					ParticleObject:Destroy()
+					ParticleObject = nil
+				end
+			end
+
+
+			button.Text =
+				"PARTICLE FX  •  "
+				.. (
+					State.Particles
+					and "ON"
+					or "OFF"
+				)
+
+			SetButtonState(
+				button,
+				State.Particles
+			)
+		end
+	)
+
+
+BigHeadButton =
+	CreateButton(
+		FunPage,
+		"BIG HEAD  •  OFF",
+		function(button)
+
+			State.BigHead =
+				not State.BigHead
+
+
+			local character =
+				getCharacter()
+
+			local head =
+				character
+				and character:FindFirstChild("Head")
+
+
+			if head and head:IsA("BasePart") then
+
+				if State.BigHead then
+
+					Original.HeadSize =
+						Original.HeadSize
+						or head.Size
+
+					head.Size =
+						Original.HeadSize * 1.7
+
+				else
+
+					if Original.HeadSize then
+						head.Size =
+							Original.HeadSize
+					end
+				end
+			end
+
+
+			button.Text =
+				"BIG HEAD  •  "
+				.. (
+					State.BigHead
+					and "ON"
+					or "OFF"
+				)
+
+			SetButtonState(
+				button,
+				State.BigHead
+			)
+		end
+	)
+
+
+--// =========================================================
+--// VISUAL
+--// =========================================================
+
+CreateSection(
+	VisualPage,
+	"CAMERA / LIGHTING"
+)
+
+
+FOVButton =
+	CreateButton(
+		VisualPage,
+		"CAMERA FOV  •  70",
+		function(button)
+
+			local camera =
+				getCamera()
+
+			if not camera then
+				return
+			end
+
+
+			camera.FieldOfView += 15
+
+
+			if camera.FieldOfView > 130 then
+				camera.FieldOfView = 55
+			end
+
+
+			button.Text =
+				"CAMERA FOV  •  "
+				.. math.floor(
+					camera.FieldOfView
+				)
+		end
+	)
+
+
+FullbrightButton =
+	CreateButton(
+		VisualPage,
+		"FULLBRIGHT  •  OFF",
+		function(button)
+
+			State.Fullbright =
+				not State.Fullbright
+
+
+			if State.Fullbright then
+
+				Lighting.Brightness = 3
+
+				Lighting.Ambient =
+					Color3.fromRGB(
+						255,
+						255,
+						255
+					)
+
+				Lighting.OutdoorAmbient =
+					Color3.fromRGB(
+						255,
+						255,
+						255
+					)
+
+			else
+
+				Lighting.Brightness =
+					Original.Lighting.Brightness
+
+				Lighting.Ambient =
+					Original.Lighting.Ambient
+
+				Lighting.OutdoorAmbient =
+					Original.Lighting.OutdoorAmbient
+			end
+
+
+			button.Text =
+				"FULLBRIGHT  •  "
+				.. (
+					State.Fullbright
+					and "ON"
+					or "OFF"
+				)
+
+			SetButtonState(
+				button,
+				State.Fullbright
+			)
+		end
+	)
+
+
+NightButton =
+	CreateButton(
+		VisualPage,
+		"NIGHT MODE  •  OFF",
+		function(button)
+
+			State.NightMode =
+				not State.NightMode
+
+
+			Lighting.ClockTime =
+				State.NightMode
+				and 0
+				or Original.Lighting.ClockTime
+
+
+			button.Text =
+				"NIGHT MODE  •  "
+				.. (
+					State.NightMode
+					and "ON"
+					or "OFF"
+				)
+
+			SetButtonState(
+				button,
+				State.NightMode
+			)
+		end
+	)
+
+
+VividButton =
+	CreateButton(
+		VisualPage,
+		"VIVID LIGHTING  •  OFF",
+		function(button)
+
+			State.VividMode =
+				not State.VividMode
+
+
+			if State.VividMode then
+
+				Lighting.Brightness =
+					Original.Lighting.Brightness
+					+ 1
+
+				Lighting.ExposureCompensation =
+					0.5
+
+			else
+
+				Lighting.Brightness =
+					Original.Lighting.Brightness
+
+				Lighting.ExposureCompensation =
+					Original.Lighting.ExposureCompensation
+			end
+
+
+			button.Text =
+				"VIVID LIGHTING  •  "
+				.. (
+					State.VividMode
+					and "ON"
+					or "OFF"
+				)
+
+			SetButtonState(
+				button,
+				State.VividMode
+			)
+		end
+	)
+
+
+CreateButton(
+	VisualPage,
+	"RESET VISUALS",
+	function()
+
+		State.Fullbright = false
+		State.NightMode = false
+		State.VividMode = false
+
+
+		Lighting.Brightness =
+			Original.Lighting.Brightness
+
+		Lighting.Ambient =
+			Original.Lighting.Ambient
+
+		Lighting.OutdoorAmbient =
+			Original.Lighting.OutdoorAmbient
+
+		Lighting.ClockTime =
+			Original.Lighting.ClockTime
+
+		Lighting.ExposureCompensation =
+			Original.Lighting.ExposureCompensation
+
+
+		local camera =
+			getCamera()
+
+		if camera then
+			camera.FieldOfView =
+				Original.CameraFOV
+		end
+
+
+		FullbrightButton.Text =
+			"FULLBRIGHT  •  OFF"
+
+		NightButton.Text =
+			"NIGHT MODE  •  OFF"
+
+		VividButton.Text =
+			"VIVID LIGHTING  •  OFF"
+
+		FOVButton.Text =
+			"CAMERA FOV  •  "
+			.. tostring(
+				Original.CameraFOV
+			)
+
+
+		SetButtonState(
+			FullbrightButton,
+			false
+		)
+
+		SetButtonState(
+			NightButton,
+			false
+		)
+
+		SetButtonState(
+			VividButton,
+			false
+		)
+	end
+)
+
+
+--// =========================================================
+--// PLAYER
+--// =========================================================
+
+CreateSection(
+	PlayerPage,
+	"CHARACTER"
+)
+
+
+CreateButton(
+	PlayerPage,
+	"HEAL LOCAL CHARACTER",
+	function()
+
+		local humanoid =
+			getHumanoid(
+				getCharacter()
+			)
+
+		if humanoid then
+			humanoid.Health =
+				humanoid.MaxHealth
+		end
+	end
+)
+
+
+CreateButton(
+	PlayerPage,
+	"SIT / STAND",
+	function()
+
+		local humanoid =
+			getHumanoid(
+				getCharacter()
+			)
+
+		if humanoid then
+			humanoid.Sit =
+				not humanoid.Sit
+		end
+	end
+)
+
+
+CreateButton(
+	PlayerPage,
+	"RESET CAMERA",
+	function()
+
+		local camera =
+			getCamera()
+
+		local humanoid =
+			getHumanoid(
+				getCharacter()
+			)
+
+		if camera and humanoid then
+
+			camera.CameraType =
+				Enum.CameraType.Custom
+
+			camera.CameraSubject =
+				humanoid
+
+			camera.FieldOfView =
+				Original.CameraFOV
+		end
+	end
+)
+
+
+CreateButton(
+	PlayerPage,
+	"RESPAWN CHARACTER",
+	function()
+
+		local humanoid =
+			getHumanoid(
+				getCharacter()
+			)
+
+		if humanoid then
+			humanoid.Health = 0
+		end
+	end
+)
+
+
+CreateSection(
+	PlayerPage,
+	"LOCAL INFO"
+)
+
+
+local PositionButton =
+	CreateButton(
+		PlayerPage,
+		"POSITION  •  ---",
+		function()
+
+			local root =
+				getRoot(
+					getCharacter()
+				)
+
+			if root then
+
+				CreateToast(
+					"POSITION",
+					string.format(
+						"X %.1f  Y %.1f  Z %.1f",
+						root.Position.X,
+						root.Position.Y,
+						root.Position.Z
+					),
+					2
+				)
+			end
+		end
+	)
+
+
+local VelocityButton =
+	CreateButton(
+		PlayerPage,
+		"VELOCITY  •  ---",
+		function()
+
+			local root =
+				getRoot(
+					getCharacter()
+				)
+
+			if root then
+
+				CreateToast(
+					"VELOCITY",
+					string.format(
+						"%.1f studs/s",
+						root.AssemblyLinearVelocity.Magnitude
+					),
+					2
+				)
+			end
+		end
+	)
+
+
+local HumanoidStateButton =
+	CreateButton(
+		PlayerPage,
+		"HUMANOID STATE  •  ---",
+		function()
+
+			local humanoid =
+				getHumanoid(
+					getCharacter()
+				)
+
+			if humanoid then
+
+				CreateToast(
+					"HUMANOID",
+					humanoid:GetState().Name,
+					2
+				)
+			end
+		end
+	)
+
+
+--// =========================================================
+--// TROLL
+--// =========================================================
+
+CreateSection(
+	TrollPage,
+	"TARGET"
+)
+
+
+TargetInfoLabel =
+	Instance.new("TextLabel")
+
+TargetInfoLabel.Size =
+	UDim2.new(1, -6, 0, 40)
+
+TargetInfoLabel.BackgroundColor3 =
+	Theme.Panel
+
+TargetInfoLabel.BorderSizePixel = 0
+TargetInfoLabel.Font = Enum.Font.GothamBold
+TargetInfoLabel.Text = "TARGET  •  NONE"
+TargetInfoLabel.TextSize = 11
+TargetInfoLabel.TextColor3 = Theme.Text
+TargetInfoLabel.TextXAlignment =
+	Enum.TextXAlignment.Center
+
+TargetInfoLabel.ZIndex = 250
+TargetInfoLabel.Parent = TrollPage
+
+
+local TargetInfoCorner =
+	Instance.new("UICorner")
+
+TargetInfoCorner.CornerRadius =
+	UDim.new(0, 10)
+
+TargetInfoCorner.Parent =
+	TargetInfoLabel
+
+
+TargetStatsLabel =
+	Instance.new("TextLabel")
+
+TargetStatsLabel.Size =
+	UDim2.new(1, -6, 0, 34)
+
+TargetStatsLabel.BackgroundColor3 =
+	Theme.Button
+
+TargetStatsLabel.BackgroundTransparency =
+	0.15
+
+TargetStatsLabel.BorderSizePixel = 0
+TargetStatsLabel.Font = Enum.Font.GothamMedium
+TargetStatsLabel.Text =
+	"DISTANCE • -- | SPEED • -- | HP • --"
+
+TargetStatsLabel.TextSize = 9
+TargetStatsLabel.TextColor3 = Theme.Subtext
+TargetStatsLabel.TextXAlignment =
+	Enum.TextXAlignment.Center
+
+TargetStatsLabel.ZIndex = 250
+TargetStatsLabel.Parent = TrollPage
+
+
+local TargetStatsCorner =
+	Instance.new("UICorner")
+
+TargetStatsCorner.CornerRadius =
+	UDim.new(0, 10)
+
+TargetStatsCorner.Parent =
+	TargetStatsLabel
+
+
+TargetRemoteLabel =
+	Instance.new("TextLabel")
+
+TargetRemoteLabel.Size =
+	UDim2.new(1, -6, 0, 30)
+
+TargetRemoteLabel.BackgroundTransparency =
+	1
+
+TargetRemoteLabel.Font =
+	Enum.Font.GothamMedium
+
+TargetRemoteLabel.Text =
+	"SERVER FLING BRIDGE • CHECKING..."
+
+TargetRemoteLabel.TextSize = 9
+TargetRemoteLabel.TextColor3 =
+	Theme.Subtext
+
+TargetRemoteLabel.TextXAlignment =
+	Enum.TextXAlignment.Left
+
+TargetRemoteLabel.ZIndex = 250
+TargetRemoteLabel.Parent = TrollPage
+
+
+CreateButton(
+	TrollPage,
+	"REFRESH PLAYERS / BOTS",
+	function()
+		RefreshTargetList()
+	end
+)
+
+
+TargetList =
+	Instance.new("ScrollingFrame")
+
+TargetList.Name =
+	"TBAM_TargetList"
+
+TargetList.Size =
+	UDim2.new(1, -6, 0, 115)
+
+TargetList.BackgroundColor3 =
+	Theme.Panel
+
+TargetList.BackgroundTransparency =
+	0.1
+
+TargetList.BorderSizePixel = 0
+
+TargetList.ScrollBarThickness = 3
+TargetList.ScrollBarImageColor3 =
+	Theme.Accent
+
+TargetList.ScrollBarImageTransparency =
+	0.3
+
+TargetList.AutomaticCanvasSize =
+	Enum.AutomaticSize.Y
+
+TargetList.CanvasSize =
+	UDim2.new()
+
+TargetList.ZIndex = 260
+TargetList.Parent = TrollPage
+
+
+local TargetListCorner =
+	Instance.new("UICorner")
+
+TargetListCorner.CornerRadius =
+	UDim.new(0, 11)
+
+TargetListCorner.Parent =
+	TargetList
+
+
+local TargetListPadding =
+	Instance.new("UIPadding")
+
+TargetListPadding.PaddingTop =
+	UDim.new(0, 5)
+
+TargetListPadding.PaddingBottom =
+	UDim.new(0, 5)
+
+TargetListPadding.PaddingLeft =
+	UDim.new(0, 5)
+
+TargetListPadding.PaddingRight =
+	UDim.new(0, 5)
+
+TargetListPadding.Parent =
+	TargetList
+
+
+local TargetListLayout =
+	Instance.new("UIListLayout")
+
+TargetListLayout.Padding =
+	UDim.new(0, 5)
+
+TargetListLayout.Parent =
+	TargetList
+
+
+CreateSection(
+	TrollPage,
+	"LOCAL TROLL TOOLS"
+)
+
+
+CreateButton(
+	TrollPage,
+	"TP TO TARGET",
+	function()
+
+		if not TrollTarget
+			or not isValidTrollTarget(
+				TrollTarget
+			)
+		then
+
+			CreateToast(
+				"TP",
+				"Selecione um alvo válido primeiro.",
+				1.5
+			)
+
+			return
+		end
+
+
+		local myRoot =
+			getRoot(
+				getCharacter()
+			)
+
+		local targetRoot =
+			getTargetRoot(
+				TrollTarget
+			)
+
+
+		if myRoot and targetRoot then
+
+			myRoot.CFrame =
+				targetRoot.CFrame
+				*
+				CFrame.new(
+					0,
+					0,
+					CONFIG.FollowDistance
+				)
+
+			CreateToast(
+				"TP",
+				"Teleportado para "
+					.. TrollTarget.Name,
+				1.5
+			)
+		end
+	end
+)
+
+
+CreateButton(
+	TrollPage,
+	"TARGET TO ME",
+	function()
+
+		if not TrollTarget
+			or not isValidTrollTarget(
+				TrollTarget
+			)
+		then
+
+			CreateToast(
+				"TP",
+				"Selecione um alvo.",
+				1.5
+			)
+
+			return
+		end
+
+
+		local myRoot =
+			getRoot(
+				getCharacter()
+			)
+
+		local targetRoot =
+			getTargetRoot(
+				TrollTarget
+			)
+
+
+		if myRoot and targetRoot then
+
+			targetRoot.CFrame =
+				myRoot.CFrame
+				*
+				CFrame.new(
+					0,
+					0,
+					-4
+				)
+
+			CreateToast(
+				"TARGET",
+				"Alvo movido para você.",
+				1.5
+			)
+		end
+	end
+)
+
+
+SpectateButton =
+	CreateButton(
+		TrollPage,
+		"SPECTATE POV  •  OFF",
+		function(button)
+
+			State.TrollSpectate =
+				not State.TrollSpectate
+
+
+			local camera =
+				getCamera()
+
+
+			if State.TrollSpectate then
+
+				local targetHumanoid =
+					getTargetHumanoid(
+						TrollTarget
+					)
+
+
+				if not camera
+					or not targetHumanoid
+				then
+
+					State.TrollSpectate =
+						false
+
+					button.Text =
+						"SPECTATE POV  •  OFF"
+
+					SetButtonState(
+						button,
+						false
+					)
+
+					CreateToast(
+						"SPECTATE",
+						"Selecione um alvo válido primeiro.",
+						1.5
+					)
+
+					return
+				end
+
+
+				camera.CameraType =
+					Enum.CameraType.Custom
+
+				camera.CameraSubject =
+					targetHumanoid
+
+			else
+
+				local humanoid =
+					getHumanoid(
+						getCharacter()
+					)
+
+				if camera then
+
+					camera.CameraType =
+						Enum.CameraType.Custom
+
+					camera.CameraSubject =
+						humanoid
+				end
+			end
+
+
+			button.Text =
+				"SPECTATE POV  •  "
+				.. (
+					State.TrollSpectate
+					and "ON"
+					or "OFF"
+				)
+
+
+			SetButtonState(
+				button,
+				State.TrollSpectate
+			)
+		end
+	)
+
+
+FollowButton =
+	CreateButton(
+		TrollPage,
+		"FOLLOW TARGET  •  OFF",
+		function(button)
+
+			State.TrollFollow =
+				not State.TrollFollow
+
+
+			if State.TrollFollow
+				and (
+					not TrollTarget
+					or not isValidTrollTarget(
+						TrollTarget
+					)
+				)
+			then
+
+				State.TrollFollow =
+					false
+
+				button.Text =
+					"FOLLOW TARGET  •  OFF"
+
+				SetButtonState(
+					button,
+					false
+				)
+
+				CreateToast(
+					"FOLLOW",
+					"Selecione um alvo válido primeiro.",
+					1.5
+				)
+
+				return
+			end
+
+
+			button.Text =
+				"FOLLOW TARGET  •  "
+				.. (
+					State.TrollFollow
+					and "ON"
+					or "OFF"
+				)
+
+
+			SetButtonState(
+				button,
+				State.TrollFollow
+			)
+		end
+	)
+
+
+TargetESPButton =
+	CreateButton(
+		TrollPage,
+		"TARGET ESP  •  OFF",
+		function(button)
+
+			if not TrollTarget then
+
+				State.TrollESP = false
+
+				button.Text =
+					"TARGET ESP  •  OFF"
+
+				SetButtonState(
+					button,
+					false
+				)
+
+				CreateToast(
+					"ESP",
+					"Selecione um alvo primeiro.",
+					1.5
+				)
+
+				return
+			end
+
+
+			State.TrollESP =
+				not State.TrollESP
+
+
+			if State.TrollESP then
+
+				SetTrollTarget(
+					TrollTarget
+				)
+
+			else
+
+				ClearTrollHighlight()
+			end
+
+
+			button.Text =
+				"TARGET ESP  •  "
+				.. (
+					State.TrollESP
+					and "ON"
+					or "OFF"
+				)
+
+			SetButtonState(
+				button,
+				State.TrollESP
+			)
+		end
+	)
+
+
+CreateSection(
+	TrollPage,
+	"PHYSICS TROLL"
+)
+
+
+--// =========================================================
+--// FLING
+--// =========================================================
+
+CreateButton(
+	TrollPage,
+	"FLING TARGET",
+	function()
+
+		if not TrollTarget
+			or not isValidTrollTarget(
+				TrollTarget
+			)
+		then
+
+			CreateToast(
+				"FLING",
+				"Selecione um alvo válido primeiro.",
+				1.5
+			)
+
+			return
+		end
+
+
+		-- server bridge first
+		if serverAction(
+			"FLING",
+			TrollTarget,
+			{
+				Power = CONFIG.FlingPower,
+				Impulse = CONFIG.FlingImpulse,
+				Angular = CONFIG.FlingAngular
+			}
+		) then
+
+			CreateToast(
+				"FLING",
+				"Pedido de fling enviado ao servidor.",
+				1.5
+			)
+
+			return
+		end
+
+
+		-- local fallback
+		local targetRoot =
+			getTargetRoot(
+				TrollTarget
+			)
+
+		local myRoot =
+			getRoot(
+				getCharacter()
+			)
+
+
+		if not targetRoot then
+			return
+		end
+
+
+		local direction
+
+		if myRoot then
+
+			direction =
+				safeUnit(
+					targetRoot.Position
+						- myRoot.Position,
+					Vector3.new(
+						1,
+						0.2,
+						0
+					)
+				)
+
+		else
+
+			direction =
+				Vector3.new(
+					1,
+					0.2,
+					0
+				)
+		end
+
+
+		local horizontal =
+			direction
+			* CONFIG.FlingPower
+
+		local upward =
+			Vector3.new(
+				0,
+				CONFIG.FlingPower * 0.55,
+				0
+			)
+
+		local finalVelocity =
+			horizontal
+			+ upward
+
+
+		local successImpulse =
+			pcall(function()
+
+				targetRoot:ApplyImpulse(
+					finalVelocity
+					* CONFIG.FlingImpulse
+				)
+			end)
+
+
+		pcall(function()
+
+			targetRoot.AssemblyLinearVelocity =
+				finalVelocity
+
+			targetRoot.AssemblyAngularVelocity =
+				Vector3.new(
+					CONFIG.FlingAngular,
+					CONFIG.FlingAngular,
+					CONFIG.FlingAngular
+				)
+		end)
+
+
+		if successImpulse then
+
+			local startTime =
+				os.clock()
+
+
+			task.spawn(function()
+
+				while
+					TrollTarget
+					and TrollTarget.Parent
+					and targetRoot.Parent
+					and os.clock()
+						- startTime
+						< CONFIG.FlingDuration
+				do
+
+					pcall(function()
+
+						targetRoot:ApplyImpulse(
+							finalVelocity
+							* 0.18
+							* CONFIG.FlingImpulse
+						)
+
+						targetRoot.AssemblyAngularVelocity =
+							Vector3.new(
+								CONFIG.FlingAngular,
+								CONFIG.FlingAngular,
+								CONFIG.FlingAngular
+							)
+					end)
+
+					RunService.Heartbeat:Wait()
+				end
+			end)
+
+			CreateToast(
+				"FLING",
+				"Impulso físico aplicado.",
+				1.5
+			)
+
+		else
+
+			CreateToast(
+				"FLING",
+				"Sem autoridade física local sobre o alvo.",
+				2
+			)
+		end
+	end
+)
+
+
+--// =========================================================
+--// LAUNCH
+--// =========================================================
+
+CreateButton(
+	TrollPage,
+	"LAUNCH TARGET",
+	function()
+
+		if not TrollTarget
+			or not isValidTrollTarget(
+				TrollTarget
+			)
+		then
+
+			CreateToast(
+				"LAUNCH",
+				"Selecione um alvo válido primeiro.",
+				1.5
+			)
+
+			return
+		end
+
+
+		if serverAction(
+			"LAUNCH",
+			TrollTarget,
+			{
+				Power = CONFIG.LaunchPower
+			}
+		) then
+
+			CreateToast(
+				"LAUNCH",
+				"Launch enviado ao servidor.",
+				1.5
+			)
+
+			return
+		end
+
+
+		local targetRoot =
+			getTargetRoot(
+				TrollTarget
+			)
+
+
+		if targetRoot then
+
+			pcall(function()
+
+				targetRoot:ApplyImpulse(
+					Vector3.new(
+						0,
+						CONFIG.LaunchPower
+							* targetRoot:GetMass(),
+						0
+					)
+				)
+
+				targetRoot.AssemblyLinearVelocity =
+					Vector3.new(
+						0,
+						CONFIG.LaunchPower,
+						0
+					)
+			end)
+
+
+			CreateToast(
+				"LAUNCH",
+				"Launch físico aplicado.",
+				1.5
+			)
+		end
+	end
+)
+
+
+--// =========================================================
+--// PUSH
+--// =========================================================
+
+CreateButton(
+	TrollPage,
+	"PUSH TARGET",
+	function()
+
+		if not TrollTarget
+			or not isValidTrollTarget(
+				TrollTarget
+			)
+		then
+
+			CreateToast(
+				"PUSH",
+				"Selecione um alvo.",
+				1.5
+			)
+
+			return
+		end
+
+
+		local myRoot =
+			getRoot(
+				getCharacter()
+			)
+
+		local targetRoot =
+			getTargetRoot(
+				TrollTarget
+			)
+
+
+		if not myRoot
+			or not targetRoot
+		then
+			return
+		end
+
+
+		local direction =
+			safeUnit(
+				targetRoot.Position
+					- myRoot.Position,
+				Vector3.new(
+					0,
+					0,
+					-1
+				)
+			)
+
+
+		if serverAction(
+			"PUSH",
+			TrollTarget,
+			{
+				Direction = direction,
+				Power = CONFIG.PushPower
+			}
+		) then
+			return
+		end
+
+
+		pcall(function()
+
+			local velocity =
+				direction
+				* CONFIG.PushPower
+				+ Vector3.new(
+					0,
+					25,
+					0
+				)
+
+
+			targetRoot:ApplyImpulse(
+				velocity
+				* targetRoot:GetMass()
+			)
+
+			targetRoot.AssemblyLinearVelocity =
+				velocity
+		end)
+	end
+)
+
+
+--// =========================================================
+--// PULL
+--// =========================================================
+
+CreateButton(
+	TrollPage,
+	"PULL TARGET",
+	function()
+
+		if not TrollTarget
+			or not isValidTrollTarget(
+				TrollTarget
+			)
+		then
+
+			CreateToast(
+				"PULL",
+				"Selecione um alvo.",
+				1.5
+			)
+
+			return
+		end
+
+
+		local myRoot =
+			getRoot(
+				getCharacter()
+			)
+
+		local targetRoot =
+			getTargetRoot(
+				TrollTarget
+			)
+
+
+		if not myRoot
+			or not targetRoot
+		then
+			return
+		end
+
+
+		local direction =
+			safeUnit(
+				myRoot.Position
+					- targetRoot.Position,
+				Vector3.new(
+					0,
+					0,
+					1
+				)
+			)
+
+
+		if serverAction(
+			"PULL",
+			TrollTarget,
+			{
+				Direction = direction,
+				Power = CONFIG.PullPower
+			}
+		) then
+			return
+		end
+
+
+		pcall(function()
+
+			local velocity =
+				direction
+				* CONFIG.PullPower
+
+			targetRoot:ApplyImpulse(
+				velocity
+				* targetRoot:GetMass()
+			)
+
+			targetRoot.AssemblyLinearVelocity =
+				velocity
+		end)
+	end
+)
+
+
+--// =========================================================
+--// SPIN TARGET
+--// =========================================================
+
+SpinTargetButton =
+	CreateButton(
+		TrollPage,
+		"SPIN TARGET  •  OFF",
+		function(button)
+
+			State.TrollSpin =
+				not State.TrollSpin
+
+
+			if State.TrollSpin
+				and (
+					not TrollTarget
+					or not isValidTrollTarget(
+						TrollTarget
+					)
+				)
+			then
+
+				State.TrollSpin =
+					false
+
+				button.Text =
+					"SPIN TARGET  •  OFF"
+
+				SetButtonState(
+					button,
+					false
+				)
+
+				CreateToast(
+					"SPIN TARGET",
+					"Selecione um alvo válido primeiro.",
+					1.5
+				)
+
+				return
+			end
+
+
+			button.Text =
+				"SPIN TARGET  •  "
+				.. (
+					State.TrollSpin
+					and "ON"
+					or "OFF"
+				)
+
+
+			SetButtonState(
+				button,
+				State.TrollSpin
+			)
+		end
+	)
+
+
+--// =========================================================
+--// FREEZE
+--// =========================================================
+
+FreezeTargetButton =
+	CreateButton(
+		TrollPage,
+		"FREEZE TARGET  •  OFF",
+		function(button)
+
+			if not TrollTarget
+				or not isValidTrollTarget(
+					TrollTarget
+				)
+			then
+
+				CreateToast(
+					"FREEZE",
+					"Selecione um alvo.",
+					1.5
+				)
+
+				return
+			end
+
+
+			State.TrollFreeze =
+				not State.TrollFreeze
+
+
+			if serverAction(
+				"FREEZE",
+				TrollTarget,
+				{
+					Enabled =
+						State.TrollFreeze
+				}
+			) then
+
+				button.Text =
+					"FREEZE TARGET  •  "
+					.. (
+						State.TrollFreeze
+						and "ON"
+						or "OFF"
+					)
+
+				SetButtonState(
+					button,
+					State.TrollFreeze
+				)
+
+				return
+			end
+
+
+			local targetHumanoid =
+				getTargetHumanoid(
+					TrollTarget
+				)
+
+
+			if targetHumanoid then
+
+				targetHumanoid.PlatformStand =
+					State.TrollFreeze
+
+			end
+
+
+			button.Text =
+				"FREEZE TARGET  •  "
+				.. (
+					State.TrollFreeze
+					and "ON"
+					or "OFF"
+				)
+
+
+			SetButtonState(
+				button,
+				State.TrollFreeze
+			)
+		end
+	)
+
+
+--// =========================================================
+--// RAGDOLL
+--// =========================================================
+
+CreateButton(
+	TrollPage,
+	"RAGDOLL TARGET",
+	function()
+
+		if not TrollTarget
+			or not isValidTrollTarget(
+				TrollTarget
+			)
+		then
+			return
+		end
+
+
+		if serverAction(
+			"RAGDOLL",
+			TrollTarget
+		) then
+
+			CreateToast(
+				"RAGDOLL",
+				"Pedido enviado ao servidor.",
+				1.5
+			)
+
+			return
+		end
+
+
+		local humanoid =
+			getTargetHumanoid(
+				TrollTarget
+			)
+
+
+		if humanoid then
+
+			pcall(function()
+
+				humanoid.PlatformStand =
+					true
+
+				humanoid:ChangeState(
+					Enum.HumanoidStateType.Physics
+				)
+			end)
+		end
+	end
+)
+
+
+CreateButton(
+	TrollPage,
+	"UNRAGDOLL TARGET",
+	function()
+
+		if not TrollTarget then
+			return
+		end
+
+
+		if serverAction(
+			"UNRAGDOLL",
+			TrollTarget
+		) then
+
+			return
+		end
+
+
+		local humanoid =
+			getTargetHumanoid(
+				TrollTarget
+			)
+
+
+		if humanoid then
+
+			pcall(function()
+
+				humanoid.PlatformStand =
+					false
+
+				humanoid:ChangeState(
+					Enum.HumanoidStateType.GettingUp
+				)
+			end)
+		end
+	end
+)
+
+
+--// =========================================================
+--// BRING
+--// =========================================================
+
+CreateButton(
+	TrollPage,
+	"BRING TARGET",
+	function()
+
+		if not TrollTarget
+			or not isValidTrollTarget(
+				TrollTarget
+			)
+		then
+
+			CreateToast(
+				"BRING",
+				"Selecione um alvo válido.",
+				1.5
+			)
+
+			return
+		end
+
+
+		local myRoot =
+			getRoot(
+				getCharacter()
+			)
+
+		local targetRoot =
+			getTargetRoot(
+				TrollTarget
+			)
+
+
+		if myRoot and targetRoot then
+
+			if serverAction(
+				"BRING",
+				TrollTarget,
+				{
+					CFrame =
+						myRoot.CFrame
+							* CFrame.new(
+								0,
+								0,
+								-4
+							)
+				}
+			) then
+
+				CreateToast(
+					"BRING",
+					"Pedido enviado ao servidor.",
+					1.5
+				)
+
+				return
+			end
+
+
+			targetRoot.CFrame =
+				myRoot.CFrame
+				*
+				CFrame.new(
+					0,
+					0,
+					-4
+				)
+
+
+			targetRoot.AssemblyLinearVelocity =
+				Vector3.zero
+		end
+	end
+)
+
+
+--// =========================================================
+--// STOP
+--// =========================================================
+
+CreateButton(
+	TrollPage,
+	"STOP TARGET EFFECTS",
+	function()
+
+		if TrollTarget then
+
+			if serverAction(
+				"STOP",
+				TrollTarget
+			) then
+				return
+			end
+
+
+			local targetRoot =
+				getTargetRoot(
+					TrollTarget
+				)
+
+
+			if targetRoot then
+
+				pcall(function()
+
+					targetRoot.AssemblyLinearVelocity =
+						Vector3.zero
+
+					targetRoot.AssemblyAngularVelocity =
+						Vector3.zero
+				end)
+			end
+		end
+
+
+		State.TrollSpin =
+			false
+
+		State.TrollFreeze =
+			false
+
+
+		SpinTargetButton.Text =
+			"SPIN TARGET  •  OFF"
+
+		FreezeTargetButton.Text =
+			"FREEZE TARGET  •  OFF"
+
+
+		SetButtonState(
+			SpinTargetButton,
+			false
+		)
+
+		SetButtonState(
+			FreezeTargetButton,
+			false
+		)
+	end
+)
+
+
+--// =========================================================
+--// TARGET INFO
+--// =========================================================
+
+CreateButton(
+	TrollPage,
+	"TARGET INFO",
+	function()
+
+		if not TrollTarget then
+
+			CreateToast(
+				"TARGET",
+				"Nenhum alvo selecionado.",
+				1.5
+			)
+
+			return
+		end
+
+
+		local humanoid =
+			getTargetHumanoid(
+				TrollTarget
+			)
+
+		local root =
+			getTargetRoot(
+				TrollTarget
+			)
+
+
+		if not humanoid or not root then
+			return
+		end
+
+
+		local distance =
+			getTargetDistance()
+			or 0
+
+		local velocity =
+			getTargetVelocity()
+			or 0
+
+		local mass =
+			getTargetMass()
+			or 0
+
+
+		CreateToast(
+			"TARGET INFO",
+			string.format(
+				"HP %.0f | %.1f studs | %.1f u/s | %.1f kg",
+				humanoid.Health,
+				distance,
+				velocity,
+				mass
+			),
+			3
+		)
+	end
+)
+
+
+--// =========================================================
+--// CLEAR
+--// =========================================================
+
+CreateButton(
+	TrollPage,
+	"CLEAR TARGET",
+	function()
+
+		TrollTarget = nil
+
+		State.SelectedPlayer = nil
+		State.TrollTargetName = ""
+
+		State.TrollFollow = false
+		State.TrollSpectate = false
+		State.TrollSpin = false
+		State.TrollESP = false
+		State.TrollFreeze = false
+
+
+		ClearTrollHighlight()
+
+
+		local camera =
+			getCamera()
+
+		local humanoid =
+			getHumanoid(
+				getCharacter()
+			)
+
+
+		if camera and humanoid then
+
+			camera.CameraType =
+				Enum.CameraType.Custom
+
+			camera.CameraSubject =
+				humanoid
+		end
+
+
+		if TargetInfoLabel then
+			TargetInfoLabel.Text =
+				"TARGET  •  NONE"
+		end
+
+
+		if TargetStatsLabel then
+			TargetStatsLabel.Text =
+				"DISTANCE • -- | SPEED • -- | HP • --"
+		end
+
+
+		SpectateButton.Text =
+			"SPECTATE POV  •  OFF"
+
+		FollowButton.Text =
+			"FOLLOW TARGET  •  OFF"
+
+		TargetESPButton.Text =
+			"TARGET ESP  •  OFF"
+
+		SpinTargetButton.Text =
+			"SPIN TARGET  •  OFF"
+
+		FreezeTargetButton.Text =
+			"FREEZE TARGET  •  OFF"
+
+
+		SetButtonState(
+			SpectateButton,
+			false
+		)
+
+		SetButtonState(
+			FollowButton,
+			false
+		)
+
+		SetButtonState(
+			TargetESPButton,
+			false
+		)
+
+		SetButtonState(
+			SpinTargetButton,
+			false
+		)
+
+		SetButtonState(
+			FreezeTargetButton,
+			false
+		)
+
+
+		CreateToast(
+			"TROLL",
+			"Alvo removido.",
+			1.5
+		)
+	end
+)
+
+
+--// =========================================================
+--// CUSTOM
+--// =========================================================
+
+CreateSection(
+	CustomPage,
+	"THEMES"
+)
+
+
+local function CreateThemeButton(
+	name,
+	displayName
+)
+
+	local button =
+		CreateButton(
+			CustomPage,
+			displayName,
+			function()
+				ApplyTheme(name)
+			end
+		)
+
+	ThemeButtons[name] = button
+
+	return button
+end
+
+
+CreateThemeButton(
+	"DEFAULT",
+	"DEFAULT"
+)
+
+CreateThemeButton(
+	"FRUTIGER_AERO",
+	"FRUTIGER AERO"
+)
+
+CreateThemeButton(
+	"GLASS",
+	"GLASS"
+)
+
+CreateThemeButton(
+	"CYBER",
+	"CYBER"
+)
+
+CreateThemeButton(
+	"WINDOWS_XP",
+	"WINDOWS XP"
+)
+
+CreateThemeButton(
+	"OLED",
+	"OLED"
+)
+
+CreateThemeButton(
+	"Y2K",
+	"Y2K"
+)
+
+
+CreateSection(
+	CustomPage,
+	"UI"
+)
+
+
+local ScaleButton =
+	CreateButton(
+		CustomPage,
+		"UI SCALE  •  0.92",
+		function(button)
+
+			State.UIScale += 0.08
+
+
+			if State.UIScale >
+				CONFIG.MaxScale
+			then
+				State.UIScale =
+					CONFIG.MinScale
+			end
+
+
+			State.UIScale =
+				math.floor(
+					State.UIScale * 100
+				) / 100
+
+
+			UIScaleObject.Scale =
+				State.UIScale
+
+
+			button.Text =
+				"UI SCALE  •  "
+				.. string.format(
+					"%.2f",
+					State.UIScale
+				)
+		end
+	)
+
+
+local CompactButton =
+	CreateButton(
+		CustomPage,
+		"COMPACT MODE  •  OFF",
+		function(button)
+
+			State.CompactMode =
+				not State.CompactMode
+
+
+			local height =
+				State.CompactMode
+				and 30
+				or 43
+
+
+			for _, entry in ipairs(Buttons) do
+
+				tween(
+					entry.Object,
+					TweenInfo.new(0.18),
+					{
+						Size =
+							UDim2.new(
+								1,
+								-6,
+								0,
+								height
+							)
+					}
+				)
+			end
+
+
+			button.Text =
+				"COMPACT MODE  •  "
+				.. (
+					State.CompactMode
+					and "ON"
+					or "OFF"
+				)
+
+
+			SetButtonState(
+				button,
+				State.CompactMode
+			)
+		end
+	)
+
+
+local GlowButton =
+	CreateButton(
+		CustomPage,
+		"BACKGROUND GLOW  •  ON",
+		function(button)
+
+			State.Glow =
+				not State.Glow
+
+
+			button.Text =
+				"BACKGROUND GLOW  •  "
+				.. (
+					State.Glow
+					and "ON"
+					or "OFF"
+				)
+
+
+			SetButtonState(
+				button,
+				State.Glow
+			)
+		end
+	)
+
+
+CreateButton(
+	CustomPage,
+	"REPOSITION MENU CENTER",
+	function()
+
+		Window.Position =
+			UDim2.fromScale(
+				0.5,
+				0.5
+			)
+	end
+)
+
+
+--// =========================================================
+--// APPLY THEME
+--// =========================================================
+
+ApplyTheme =
+	function(name)
+
+		local theme =
+			THEMES[name]
+
+
+		if not theme then
+			return
+		end
+
+
+		State.Theme = name
+
+		Theme = theme
+
+
+		Window.BackgroundColor3 =
+			theme.Background
+
+		WindowStroke.Color =
+			theme.Border
+
+
+		Title.TextColor3 =
+			theme.Text
+
+		Subtitle.TextColor3 =
+			theme.Subtext
+
+		Status.TextColor3 =
+			theme.Subtext
+
+
+		CloseButton.BackgroundColor3 =
+			theme.Button
+
+		CloseButton.TextColor3 =
+			theme.Text
+
+
+		SearchBox.BackgroundColor3 =
+			theme.Button
+
+		SearchBox.TextColor3 =
+			theme.Text
+
+		SearchBox.PlaceholderColor3 =
+			theme.Subtext
+
+
+		Sidebar.BackgroundColor3 =
+			theme.Panel
+
+
+		FloatingButton.BackgroundColor3 =
+			theme.Panel
+
+		FloatingButton.TextColor3 =
+			theme.Text
+
+		FloatingStroke.Color =
+			theme.Accent
+
+
+		for _, entry in ipairs(Buttons) do
+
+			local enabled =
+				entry.Object:GetAttribute(
+					"Enabled"
+				)
+
+
+			entry.Object.TextColor3 =
+				theme.Text
+
+			entry.Object.BackgroundColor3 =
+				enabled
+				and theme.Accent
+				or theme.Button
+
+			entry.Stroke.Color =
+				theme.Border
+		end
+
+
+		for _, section in ipairs(Sections) do
+			section.TextColor3 =
+				theme.Subtext
+		end
+
+
+		for _, page in pairs(Pages) do
+			page.ScrollBarImageColor3 =
+				theme.Accent
+		end
+
+
+		for navName, nav in pairs(NavButtons) do
+
+			local active =
+				navName ==
+				State.ActivePage
+
+
+			nav.BackgroundColor3 =
+				active
+				and theme.Accent
+				or theme.Button
+
+			nav.TextColor3 =
+				active
+				and theme.Text
+				or theme.Subtext
+		end
+
+
+		for themeName, button in pairs(
+			ThemeButtons
+		) do
+
+			local selected =
+				themeName ==
+				State.Theme
+
+			button.BackgroundColor3 =
+				selected
+				and theme.Accent
+				or theme.Button
+		end
+
+
+		GlowA.BackgroundColor3 =
+			theme.Glow1
+
+		GlowB.BackgroundColor3 =
+			theme.Glow2
+
+		GlowC.BackgroundColor3 =
+			theme.Glow3
+
+
+		if TargetInfoLabel then
+
+			TargetInfoLabel.BackgroundColor3 =
+				theme.Panel
+
+			TargetInfoLabel.TextColor3 =
+				theme.Text
+		end
+
+
+		if TargetStatsLabel then
+
+			TargetStatsLabel.BackgroundColor3 =
+				theme.Button
+
+			TargetStatsLabel.TextColor3 =
+				theme.Subtext
+		end
+
+
+		if TargetRemoteLabel then
+
+			TargetRemoteLabel.TextColor3 =
+				theme.Subtext
+		end
+
+
+		if TrollTarget
+			and State.TrollESP
+		then
+
+			SetTrollTarget(
+				TrollTarget
+			)
+		end
+
+
+		if TargetList then
+			RefreshTargetList()
+		end
+
+
+		SwitchPage(
+			State.ActivePage
+		)
+	end
+
+
+--// =========================================================
+--// SEARCH
+--// =========================================================
+
+SearchBox:GetPropertyChangedSignal(
+	"Text"
+):Connect(function()
+
+	local query =
+		string.lower(
+			SearchBox.Text
+		)
+
+
+	local page =
+		Pages[
+			State.ActivePage
+		]
+
+
+	if not page then
+		return
+	end
+
+
+	for _, child in ipairs(page:GetChildren()) do
+
+		if child:IsA("TextButton") then
+
+			local searchText =
+				child:GetAttribute(
+					"SearchText"
+				)
+
+
+			if searchText then
+
+				child.Visible =
+					query == ""
+					or string.find(
+						searchText,
+						query,
+						1,
+						true
+					)
+					~= nil
+			end
+		end
 	end
 end)
 
-function refreshButtonColors()
-	for _, button in ipairs(allButtons) do if button:GetAttribute("Enabled") then button.BackgroundColor3 = ACTIVE_COLOR end end
-	restoreStroke.Color = ACTIVE_COLOR fovStroke.Color = ACTIVE_COLOR
-	for _, page in ipairs({ combatPage, funPage, customPage }) do page.ScrollBarImageColor3 = ACTIVE_COLOR end
+
+--// =========================================================
+--// OPEN / CLOSE
+--// =========================================================
+
+local function OpenMenu(animated)
+
+	if State.MenuOpen then
+		return
+	end
+
+	if State.MenuAnimating then
+		return
+	end
+
+
+	State.MenuAnimating = true
+	State.MenuOpen = true
+
+
+	if not animated then
+
+		Window.Size =
+			UDim2.fromOffset(
+				CONFIG.OpenSize.X,
+				CONFIG.OpenSize.Y
+			)
+
+		Window.Visible = true
+
+		State.MenuAnimating = false
+
+		return
+	end
+
+
+	Window.Visible = true
+
+	Window.Size =
+		UDim2.fromOffset(
+			CONFIG.ClosedSize.X,
+			CONFIG.ClosedSize.Y
+		)
+
+
+	tween(
+		Window,
+		TweenInfo.new(
+			0.35,
+			Enum.EasingStyle.Back,
+			Enum.EasingDirection.Out
+		),
+		{
+			Size =
+				UDim2.fromOffset(
+					CONFIG.OpenSize.X,
+					CONFIG.OpenSize.Y
+				)
+		}
+	)
+
+
+	task.delay(0.35, function()
+		State.MenuAnimating = false
+	end)
 end
 
-Players.PlayerAdded:Connect(function(player) player.CharacterAdded:Connect(function(character) task.wait(0.5) saveOriginalMovement(character) createESP(character, true) end) end)
-Players.PlayerRemoving:Connect(function(player) if player.Character then removeESP(player.Character) originalMovement[player.Character] = nil end end)
-Workspace.DescendantAdded:Connect(function(obj) if not obj:IsA("Model") then return end task.defer(function() if Players:GetPlayerFromCharacter(obj) then return end if isTarget(obj) then createESP(obj, false) end end) end)
 
-LocalPlayer.CharacterAdded:Connect(function(character)
-	task.wait(0.5) saveOriginalMovement(character) applySpeed() applyJump()
-	if GODMODE_ENABLED then task.wait(0.2) setupGodMode() end
-	if FLY_ENABLED then task.wait(0.2) setupFly() end
-	if ZERO_GRAVITY_ENABLED then task.wait(0.2) setupZeroG() end
-	if NOCLIP_ENABLED then task.wait(0.2) for _, part in ipairs(character:GetDescendants()) do if part:IsA("BasePart") then part.CanCollide = false end end end
+local function CloseMenu(animated)
+
+	if not State.MenuOpen then
+		return
+	end
+
+	if State.MenuAnimating then
+		return
+	end
+
+
+	State.MenuAnimating = true
+
+
+	if not animated then
+
+		Window.Visible = false
+
+		Window.Size =
+			UDim2.fromOffset(
+				CONFIG.OpenSize.X,
+				CONFIG.OpenSize.Y
+			)
+
+		State.MenuOpen = false
+
+		State.MenuAnimating = false
+
+		return
+	end
+
+
+	tween(
+		Window,
+		TweenInfo.new(
+			0.25,
+			Enum.EasingStyle.Back,
+			Enum.EasingDirection.In
+		),
+		{
+			Size =
+				UDim2.fromOffset(
+					CONFIG.ClosedSize.X,
+					CONFIG.ClosedSize.Y
+				)
+		}
+	)
+
+
+	task.delay(0.25, function()
+
+		Window.Visible = false
+
+		Window.Size =
+			UDim2.fromOffset(
+				CONFIG.OpenSize.X,
+				CONFIG.OpenSize.Y
+			)
+
+		State.MenuOpen = false
+		State.MenuAnimating = false
+	end)
+end
+
+
+CloseButton.Activated:Connect(function()
+	CloseMenu(true)
 end)
 
-minimized = true menuAnimating = false menu.Visible = false
-restoreButton.Visible = true restoreButton.Position = UDim2.fromScale(0.035, 0.18) restoreButton.Size = CLOSED_SIZE
-local initialCharacter = getCharacter() if initialCharacter then saveOriginalMovement(initialCharacter) if GODMODE_ENABLED then setupGodMode() end end
-scanTargets() applySpeed() applyJump() refreshButtonColors()
+
+FloatingButton.Activated:Connect(function()
+
+	if State.MenuOpen then
+		CloseMenu(true)
+	else
+		OpenMenu(true)
+	end
+end)
+
+
+--// =========================================================
+--// RIGHT SHIFT
+--// =========================================================
+
+UserInputService.InputBegan:Connect(
+	function(input, processed)
+
+		if processed then
+			return
+		end
+
+		if UserInputService:GetFocusedTextBox() then
+			return
+		end
+
+		if input.KeyCode ==
+			CONFIG.Hotkey
+		then
+
+			if State.MenuOpen then
+				CloseMenu(true)
+			else
+				OpenMenu(true)
+			end
+		end
+	end
+)
+
+
+--// =========================================================
+--// OUTSIDE INPUT
+--// =========================================================
+
+UserInputService.InputBegan:Connect(
+	function(input, processed)
+
+		if processed then
+			return
+		end
+
+		if not State.MenuOpen then
+			return
+		end
+
+		if UserInputService:GetFocusedTextBox() then
+			return
+		end
+
+		if
+			input.UserInputType ~=
+				Enum.UserInputType.MouseButton1
+			and input.UserInputType ~=
+				Enum.UserInputType.Touch
+		then
+			return
+		end
+
+
+		local point =
+			Vector2.new(
+				input.Position.X,
+				input.Position.Y
+			)
+
+
+		local windowPosition =
+			Window.AbsolutePosition
+
+		local windowSize =
+			Window.AbsoluteSize
+
+
+		local inside =
+			point.X >= windowPosition.X
+			and point.X <=
+				windowPosition.X
+				+ windowSize.X
+			and point.Y >=
+				windowPosition.Y
+			and point.Y <=
+				windowPosition.Y
+				+ windowSize.Y
+
+
+		if not inside then
+			CloseMenu(true)
+		end
+	end
+)
+
+
+--// =========================================================
+--// INFINITE JUMP
+--// =========================================================
+
+UserInputService.JumpRequest:Connect(function()
+
+	if not State.InfiniteJump then
+		return
+	end
+
+
+	local humanoid =
+		getHumanoid(
+			getCharacter()
+		)
+
+
+	if humanoid then
+
+		humanoid:ChangeState(
+			Enum.HumanoidStateType.Jumping
+		)
+	end
+end)
+
+
+--// =========================================================
+--// MOBILE FLY CONTROLS
+--// =========================================================
+
+local function DestroyFlyMobileControls()
+
+	if FlyMobileControls then
+
+		pcall(function()
+			FlyMobileControls:Destroy()
+		end)
+
+		FlyMobileControls = nil
+		FlyUpButton = nil
+		FlyDownButton = nil
+	end
+end
+
+
+local function CreateFlyMobileControls()
+
+	DestroyFlyMobileControls()
+
+
+	FlyMobileControls =
+		Instance.new("Frame")
+
+	FlyMobileControls.Name =
+		"TBAM_FlyMobileControls"
+
+	FlyMobileControls.Size =
+		UDim2.fromScale(
+			1,
+			1
+		)
+
+	FlyMobileControls.BackgroundTransparency =
+		1
+
+	FlyMobileControls.ZIndex =
+		1800
+
+	FlyMobileControls.Parent =
+		gui
+
+
+	local function makeControl(
+		text,
+		position
+	)
+
+		local button =
+			Instance.new(
+				"TextButton"
+			)
+
+		button.Size =
+			UDim2.fromOffset(
+				CONFIG.MobileFlyButtonSize,
+				CONFIG.MobileFlyButtonSize
+			)
+
+		button.Position =
+			position
+
+		button.AnchorPoint =
+			Vector2.new(
+				0.5,
+				0.5
+			)
+
+		button.BackgroundColor3 =
+			Theme.Panel
+
+		button.BackgroundTransparency =
+			0.12
+
+		button.BorderSizePixel =
+			0
+
+		button.Text =
+			text
+
+		button.TextColor3 =
+			Theme.Text
+
+		button.TextSize =
+			18
+
+		button.Font =
+			Enum.Font.GothamBlack
+
+		button.AutoButtonColor =
+			false
+
+		button.ZIndex =
+			1801
+
+		button.Parent =
+			FlyMobileControls
+
+
+		local corner =
+			Instance.new("UICorner")
+
+		corner.CornerRadius =
+			UDim.new(
+				1,
+				0
+			)
+
+		corner.Parent =
+			button
+
+
+		local stroke =
+			Instance.new("UIStroke")
+
+		stroke.Color =
+			Theme.Accent
+
+		stroke.Transparency =
+			0.25
+
+		stroke.Parent =
+			button
+
+
+		return button
+	end
+
+
+	FlyUpButton =
+		makeControl(
+			"▲",
+			UDim2.new(
+				1,
+				-80,
+				1,
+				-170
+			)
+		)
+
+
+	FlyDownButton =
+		makeControl(
+			"▼",
+			UDim2.new(
+				1,
+				-80,
+				1,
+				-90
+			)
+		)
+
+
+	FlyUpButton.InputBegan:Connect(
+		function(input)
+
+			if
+				input.UserInputType ==
+					Enum.UserInputType.Touch
+				or input.UserInputType ==
+					Enum.UserInputType.MouseButton1
+			then
+
+				State.FlyUpHeld =
+					true
+			end
+		end
+	)
+
+
+	FlyUpButton.InputEnded:Connect(
+		function(input)
+
+			if
+				input.UserInputType ==
+					Enum.UserInputType.Touch
+				or input.UserInputType ==
+					Enum.UserInputType.MouseButton1
+			then
+
+				State.FlyUpHeld =
+					false
+			end
+		end
+	)
+
+
+	FlyDownButton.InputBegan:Connect(
+		function(input)
+
+			if
+				input.UserInputType ==
+					Enum.UserInputType.Touch
+				or input.UserInputType ==
+					Enum.UserInputType.MouseButton1
+			then
+
+				State.FlyDownHeld =
+					true
+			end
+		end
+	)
+
+
+	FlyDownButton.InputEnded:Connect(
+		function(input)
+
+			if
+				input.UserInputType ==
+					Enum.UserInputType.Touch
+				or input.UserInputType ==
+					Enum.UserInputType.MouseButton1
+			then
+
+				State.FlyDownHeld =
+					false
+			end
+		end
+	)
+end
+
+
+--// =========================================================
+--// FLY LOOP - REAL 3D
+--// =========================================================
+
+RunService.RenderStepped:Connect(function()
+
+	if not State.FlyEnabled then
+		return
+	end
+
+	if not FlyVelocity then
+		return
+	end
+
+
+	local character =
+		getCharacter()
+
+	local humanoid =
+		getHumanoid(character)
+
+	local root =
+		getRoot(character)
+
+	local camera =
+		getCamera()
+
+
+	if not character
+		or not humanoid
+		or not root
+		or not camera
+	then
+
+		return
+	end
+
+
+	local speed =
+		CONFIG.FlySpeeds[
+			State.FlyIndex
+		]
+		or CONFIG.FlySpeeds[1]
+
+
+	local movement =
+		humanoid.MoveDirection
+
+
+	-- CAMERA FORWARD COMPLETO.
+	-- NÃO ZERA O Y.
+	local look =
+		safeUnit(
+			camera.CFrame.LookVector,
+			Vector3.new(
+				0,
+				0,
+				-1
+			)
+		)
+
+
+	-- RIGHT VETOR DA CÂMERA
+	local right =
+		safeUnit(
+			camera.CFrame.RightVector,
+			Vector3.new(
+				1,
+				0,
+				0
+			)
+		)
+
+
+	local velocity =
+		Vector3.zero
+
+
+	if movement.Magnitude > 0.001 then
+
+		-- MoveDirection contém o input do player.
+		-- Calculamos quanto o jogador está indo para frente
+		-- e quanto está indo para a lateral.
+
+		local forwardAmount =
+			movement:Dot(
+				Vector3.new(
+					look.X,
+					0,
+					look.Z
+				).Magnitude > 0.001
+					and safeUnit(
+						Vector3.new(
+							look.X,
+							0,
+							look.Z
+						),
+						Vector3.new(
+							0,
+							0,
+							-1
+						)
+					)
+					or Vector3.new(
+						0,
+						0,
+						-1
+					)
+			)
+
+
+		local rightAmount =
+			movement:Dot(
+				safeUnit(
+					Vector3.new(
+						right.X,
+						0,
+						right.Z
+					),
+					Vector3.new(
+						1,
+						0,
+						0
+					)
+				)
+			)
+
+
+		-- Direção frontal usa PITCH da câmera.
+		local forwardDirection =
+			look * forwardAmount
+
+
+		-- Strafe continua lateral.
+		local rightDirection =
+			Vector3.new(
+				right.X,
+				0,
+				right.Z
+			)
+			* rightAmount
+
+
+		velocity =
+			forwardDirection
+			+ rightDirection
+
+
+		if velocity.Magnitude > 0.001 then
+
+			velocity =
+				velocity.Unit
+				* speed
+		end
+	end
+
+
+	-- CONTROLE VERTICAL PC
+	if UserInputService:IsKeyDown(
+		Enum.KeyCode.Space
+	) then
+
+		velocity +=
+			Vector3.new(
+				0,
+				speed,
+				0
+			)
+
+	elseif
+		UserInputService:IsKeyDown(
+			Enum.KeyCode.LeftShift
+		)
+		or
+		UserInputService:IsKeyDown(
+			Enum.KeyCode.RightShift
+		)
+	then
+
+		velocity +=
+			Vector3.new(
+				0,
+				-speed,
+				0
+			)
+	end
+
+
+	-- CONTROLE VERTICAL MOBILE
+	if State.FlyUpHeld then
+
+		velocity +=
+			Vector3.new(
+				0,
+				speed,
+				0
+			)
+	end
+
+
+	if State.FlyDownHeld then
+
+		velocity +=
+			Vector3.new(
+				0,
+				-speed,
+				0
+			)
+	end
+
+
+	-- limita velocidade total
+	if velocity.Magnitude > speed then
+
+		velocity =
+			velocity.Unit
+			* speed
+	end
+
+
+	FlyVelocity.VectorVelocity =
+		velocity
+
+
+	if FlyOrientation then
+
+		-- AGORA O CORPO ACOMPANHA:
+		-- • esquerda / direita
+		-- • cima / baixo
+		-- • direção completa da câmera
+
+		local orientationLook =
+			safeUnit(
+				Vector3.new(
+					look.X,
+					look.Y,
+					look.Z
+				),
+				Vector3.new(
+					0,
+					0,
+					-1
+				)
+			)
+
+
+		FlyOrientation.CFrame =
+			CFrame.lookAt(
+				Vector3.zero,
+				orientationLook
+			)
+	end
+end)
+
+
+--// =========================================================
+--// NOCLIP LOOP
+--// =========================================================
+
+RunService.Stepped:Connect(function()
+
+	if not State.NoclipEnabled then
+		return
+	end
+
+
+	local character =
+		getCharacter()
+
+
+	if not character then
+		return
+	end
+
+
+	for _, part in ipairs(
+		character:GetDescendants()
+	) do
+
+		if part:IsA("BasePart") then
+
+			part.CanCollide =
+				false
+		end
+	end
+end)
+
+
+--// =========================================================
+--// SPIN LOOP
+--// =========================================================
+
+RunService.RenderStepped:Connect(
+	function(delta)
+
+		if not State.Spin then
+			return
+		end
+
+
+		local root =
+			getRoot(
+				getCharacter()
+			)
+
+
+		if root then
+
+			root.CFrame =
+				root.CFrame
+				*
+				CFrame.Angles(
+					0,
+					math.rad(
+						State.SpinSpeed
+					)
+					* delta,
+					0
+				)
+		end
+	end
+)
+
+
+--// =========================================================
+--// RAINBOW LOOP
+--// =========================================================
+
+RunService.RenderStepped:Connect(function()
+
+	if not State.Rainbow then
+		return
+	end
+
+
+	local character =
+		getCharacter()
+
+
+	if not character then
+		return
+	end
+
+
+	local color =
+		Color3.fromHSV(
+			(tick() % 5) / 5,
+			0.8,
+			1
+		)
+
+
+	for _, object in ipairs(
+		character:GetDescendants()
+	) do
+
+		if
+			object:IsA("BasePart")
+			and object.Name ~=
+				"HumanoidRootPart"
+		then
+
+			object.Color =
+				color
+		end
+	end
+end)
+
+
+--// =========================================================
+--// FOLLOW TARGET
+--// =========================================================
+
+RunService.RenderStepped:Connect(function()
+
+	if not State.TrollFollow then
+		return
+	end
+
+
+	if not TrollTarget
+		or not isValidTrollTarget(
+			TrollTarget
+		)
+	then
+
+		State.TrollFollow = false
+
+		if FollowButton then
+
+			FollowButton.Text =
+				"FOLLOW TARGET  •  OFF"
+
+			SetButtonState(
+				FollowButton,
+				false
+			)
+		end
+
+		return
+	end
+
+
+	local myRoot =
+		getRoot(
+			getCharacter()
+		)
+
+	local targetRoot =
+		getTargetRoot(
+			TrollTarget
+		)
+
+
+	if not myRoot
+		or not targetRoot
+	then
+		return
+	end
+
+
+	local offset =
+		targetRoot.CFrame.LookVector
+		* -CONFIG.FollowDistance
+
+
+	local destination =
+		targetRoot.Position
+		+ offset
+		+ Vector3.new(
+			0,
+			CONFIG.FollowHeight,
+			0
+		)
+
+
+	myRoot.CFrame =
+		CFrame.lookAt(
+			destination,
+			targetRoot.Position
+		)
+end)
+
+
+--// =========================================================
+--// TROLL SPIN LOOP
+--// =========================================================
+
+RunService.Heartbeat:Connect(function()
+
+	if not State.TrollSpin then
+		return
+	end
+
+
+	if not TrollTarget
+		or not isValidTrollTarget(
+			TrollTarget
+		)
+	then
+		return
+	end
+
+
+	local targetRoot =
+		getTargetRoot(
+			TrollTarget
+		)
+
+
+	if targetRoot then
+
+		if not serverAction(
+			"SPIN",
+			TrollTarget,
+			{
+				Power =
+					CONFIG.SpinPower
+			}
+		) then
+
+			pcall(function()
+
+				targetRoot.AssemblyAngularVelocity =
+					Vector3.new(
+						CONFIG.SpinPower,
+						CONFIG.SpinPower,
+						CONFIG.SpinPower
+					)
+			end)
+		end
+	end
+end)
+
+
+--// =========================================================
+--// ESP WATCHDOG
+--// =========================================================
+
+RunService.Heartbeat:Connect(function()
+
+	if TrollHighlight then
+
+		if
+			not TrollTarget
+			or not TrollTarget.Parent
+			or not State.TrollESP
+		then
+
+			ClearTrollHighlight()
+		end
+	end
+end)
+
+
+--// =========================================================
+--// TARGET STATS LOOP
+--// =========================================================
+
+task.spawn(function()
+
+	while gui.Parent do
+
+		if
+			TrollTarget
+			and isValidTrollTarget(
+				TrollTarget
+			)
+		then
+
+			local humanoid =
+				getTargetHumanoid(
+					TrollTarget
+				)
+
+
+			local distance =
+				getTargetDistance()
+
+			local velocity =
+				getTargetVelocity()
+
+
+			if TargetStatsLabel then
+
+				TargetStatsLabel.Text =
+					string.format(
+						"DIST %.1f | SPD %.1f | HP %.0f",
+						distance or 0,
+						velocity or 0,
+						humanoid
+							and humanoid.Health
+							or 0
+					)
+			end
+
+		else
+
+			if TargetStatsLabel then
+
+				TargetStatsLabel.Text =
+					"DISTANCE • -- | SPEED • -- | HP • --"
+			end
+		end
+
+
+		if TargetRemoteLabel then
+
+			TargetRemoteLabel.Text =
+				hasServerFlingBridge()
+				and
+				"SERVER FLING BRIDGE • READY"
+				or
+				"SERVER FLING BRIDGE • NOT FOUND"
+		end
+
+
+		task.wait(0.2)
+	end
+end)
+
+
+--// =========================================================
+--// TARGET AUTO REFRESH
+--// =========================================================
+
+task.spawn(function()
+
+	while gui.Parent do
+
+		if State.ActivePage ==
+			"TROLL"
+		then
+
+			pcall(
+				RefreshTargetList
+			)
+		end
+
+
+		task.wait(2)
+	end
+end)
+
+
+--// =========================================================
+--// PERFORMANCE
+--// =========================================================
+
+local fpsClock =
+	os.clock()
+
+local frameCounter = 0
+
+
+RunService.RenderStepped:Connect(function()
+
+	frameCounter += 1
+
+
+	local now =
+		os.clock()
+
+
+	if now - fpsClock >= 0.5 then
+
+		State.FPS =
+			math.floor(
+				frameCounter
+				/
+				(
+					now
+					-
+					fpsClock
+				)
+			)
+
+
+		frameCounter = 0
+		fpsClock = now
+
+
+		FPSButton.Text =
+			"FPS  •  "
+			.. tostring(
+				State.FPS
+			)
+
+
+		Status.Text =
+			"● "
+			.. tostring(
+				State.FPS
+			)
+			.. " FPS"
+	end
+end)
+
+
+task.spawn(function()
+
+	while gui.Parent do
+
+		local successPing, ping =
+			pcall(function()
+
+				local item =
+					Stats.Network
+					.ServerStatsItem[
+						"Data Ping"
+					]
+
+
+				if item then
+					return item:GetValue()
+				end
+
+				return nil
+			end)
+
+
+		if successPing and ping then
+
+			State.Ping =
+				math.floor(ping)
+
+
+			PingButton.Text =
+				"PING  •  "
+				.. tostring(
+					State.Ping
+				)
+				.. " ms"
+		end
+
+
+		local successMemory, memory =
+			pcall(function()
+
+				return Stats:
+					GetTotalMemoryUsageMb()
+			end)
+
+
+		if successMemory and memory then
+
+			State.Memory =
+				math.floor(memory)
+
+
+			MemoryButton.Text =
+				"MEMORY  •  "
+				.. tostring(
+					State.Memory
+				)
+				.. " MB"
+		end
+
+
+		local character =
+			getCharacter()
+
+		local root =
+			getRoot(character)
+
+		local humanoid =
+			getHumanoid(character)
+
+
+		if root then
+
+			PositionButton.Text =
+				string.format(
+					"POSITION  •  %.0f %.0f %.0f",
+					root.Position.X,
+					root.Position.Y,
+					root.Position.Z
+				)
+
+			VelocityButton.Text =
+				string.format(
+					"VELOCITY  •  %.0f",
+					root.AssemblyLinearVelocity.Magnitude
+				)
+		end
+
+
+		if humanoid then
+
+			HumanoidStateButton.Text =
+				"HUMANOID STATE  •  "
+				.. humanoid:GetState().Name
+		end
+
+
+		task.wait(1)
+	end
+end)
+
+
+--// =========================================================
+--// ACTIVE COUNTER
+--// =========================================================
+
+local function UpdateActiveCounter()
+
+	local amount = 0
+
+
+	for key, value in pairs(State) do
+
+		if
+			typeof(value) ==
+				"boolean"
+			and value
+		then
+
+			if
+				key ~= "MenuOpen"
+				and key ~= "MenuAnimating"
+			then
+
+				amount += 1
+			end
+		end
+	end
+
+
+	ActiveCounter.Text =
+		"ACTIVE FEATURES  •  "
+		.. tostring(amount)
+end
+
+
+task.spawn(function()
+
+	while gui.Parent do
+
+		UpdateActiveCounter()
+
+		task.wait(0.35)
+	end
+end)
+
+
+--// =========================================================
+--// CHARACTER RESPawn
+--// =========================================================
+
+LocalPlayer.CharacterAdded:Connect(function(character)
+
+	CurrentCharacter =
+		character
+
+
+	DestroyFlyMobileControls()
+
+
+	task.wait(0.5)
+
+
+	local humanoid =
+		getHumanoid(character)
+
+
+	if humanoid then
+
+		Original.WalkSpeed =
+			humanoid.WalkSpeed
+
+		Original.JumpPower =
+			humanoid.JumpPower
+
+		Original.JumpHeight =
+			humanoid.JumpHeight
+
+
+		if State.SpeedEnabled then
+
+			humanoid.WalkSpeed =
+				CONFIG.SpeedValues[
+					State.SpeedIndex
+				]
+				or Original.WalkSpeed
+		end
+
+
+		if State.JumpEnabled then
+
+			humanoid.UseJumpPower =
+				true
+
+			humanoid.JumpPower =
+				CONFIG.JumpValues[
+					State.JumpIndex
+				]
+				or Original.JumpPower
+		end
+
+
+		if State.PlatformStand then
+			humanoid.PlatformStand =
+				true
+		end
+	end
+
+
+	local root =
+		getRoot(character)
+
+
+	if State.NoclipEnabled then
+
+		for _, part in ipairs(
+			character:GetDescendants()
+		) do
+
+			if part:IsA("BasePart") then
+				part.CanCollide = false
+			end
+		end
+	end
+
+
+	if State.Trail and root then
+
+		TrailAttachment0 =
+			Instance.new("Attachment")
+
+		TrailAttachment1 =
+			Instance.new("Attachment")
+
+
+		TrailAttachment0.Position =
+			Vector3.new(
+				0,
+				1,
+				0
+			)
+
+		TrailAttachment1.Position =
+			Vector3.new(
+				0,
+				-1,
+				0
+			)
+
+
+		TrailAttachment0.Parent =
+			root
+
+		TrailAttachment1.Parent =
+			root
+
+
+		TrailObject =
+			Instance.new("Trail")
+
+
+		TrailObject.Attachment0 =
+			TrailAttachment0
+
+		TrailObject.Attachment1 =
+			TrailAttachment1
+
+		TrailObject.Lifetime =
+			0.7
+
+		TrailObject.MinLength =
+			0.1
+
+		TrailObject.Parent =
+			root
+	end
+
+
+	if State.Particles and root then
+
+		ParticleObject =
+			Instance.new(
+				"ParticleEmitter"
+			)
+
+		ParticleObject.Rate =
+			12
+
+		ParticleObject.Lifetime =
+			NumberRange.new(
+				0.5,
+				1.2
+			)
+
+		ParticleObject.Speed =
+			NumberRange.new(
+				1,
+				3
+			)
+
+		ParticleObject.SpreadAngle =
+			Vector2.new(
+				360,
+				360
+			)
+
+		ParticleObject.Parent =
+			root
+	end
+
+
+	if State.BigHead then
+
+		local head =
+			character:FindFirstChild(
+				"Head"
+			)
+
+
+		if head
+			and head:IsA("BasePart")
+		then
+
+			Original.HeadSize =
+				head.Size
+
+			head.Size =
+				Original.HeadSize * 1.7
+		end
+	end
+
+
+	if State.FlyEnabled then
+
+		task.wait(0.15)
+
+		if FlyButton then
+
+			State.FlyEnabled = false
+			FlyButton.Text =
+				"FLY  •  OFF"
+
+			SetButtonState(
+				FlyButton,
+				false
+			)
+		end
+	end
+end)
+
+
+--// =========================================================
+--// PLAYER EVENTS
+--// =========================================================
+
+Players.PlayerAdded:Connect(function()
+
+	if State.ActivePage ==
+		"TROLL"
+	then
+
+		task.delay(
+			0.5,
+			function()
+
+				pcall(
+					RefreshTargetList
+				)
+			end
+		)
+	end
+end)
+
+
+Players.PlayerRemoving:Connect(
+	function(player)
+
+		if not TrollTarget then
+			return
+		end
+
+
+		local targetPlayer =
+			Players:GetPlayerFromCharacter(
+				TrollTarget
+			)
+
+
+		if targetPlayer ~= player then
+			return
+		end
+
+
+		TrollTarget = nil
+
+		State.SelectedPlayer = nil
+		State.TrollTargetName = ""
+
+		State.TrollFollow = false
+		State.TrollSpectate = false
+		State.TrollESP = false
+		State.TrollSpin = false
+		State.TrollFreeze = false
+
+
+		ClearTrollHighlight()
+
+
+		if TargetInfoLabel then
+			TargetInfoLabel.Text =
+				"TARGET  •  NONE"
+		end
+
+
+		if TargetStatsLabel then
+			TargetStatsLabel.Text =
+				"DISTANCE • -- | SPEED • -- | HP • --"
+		end
+
+
+		if FollowButton then
+
+			FollowButton.Text =
+				"FOLLOW TARGET  •  OFF"
+
+			SetButtonState(
+				FollowButton,
+				false
+			)
+		end
+
+
+		if SpectateButton then
+
+			SpectateButton.Text =
+				"SPECTATE POV  •  OFF"
+
+			SetButtonState(
+				SpectateButton,
+				false
+			)
+		end
+
+
+		if TargetESPButton then
+
+			TargetESPButton.Text =
+				"TARGET ESP  •  OFF"
+
+			SetButtonState(
+				TargetESPButton,
+				false
+			)
+		end
+
+
+		if SpinTargetButton then
+
+			SpinTargetButton.Text =
+				"SPIN TARGET  •  OFF"
+
+			SetButtonState(
+				SpinTargetButton,
+				false
+			)
+		end
+
+
+		if FreezeTargetButton then
+
+			FreezeTargetButton.Text =
+				"FREEZE TARGET  •  OFF"
+
+			SetButtonState(
+				FreezeTargetButton,
+				false
+			)
+		end
+
+
+		local camera =
+			getCamera()
+
+		local humanoid =
+			getHumanoid(
+				getCharacter()
+			)
+
+
+		if camera and humanoid then
+
+			camera.CameraType =
+				Enum.CameraType.Custom
+
+			camera.CameraSubject =
+				humanoid
+		end
+	end
+)
+
+
+--// =========================================================
+--// INITIAL SNAPSHOT
+--// =========================================================
+
+CurrentCharacter =
+	getCharacter()
+
+
+do
+
+	local humanoid =
+		getHumanoid(
+			CurrentCharacter
+		)
+
+
+	if humanoid then
+
+		Original.WalkSpeed =
+			humanoid.WalkSpeed
+
+		Original.JumpPower =
+			humanoid.JumpPower
+
+		Original.JumpHeight =
+			humanoid.JumpHeight
+	end
+
+
+	local camera =
+		getCamera()
+
+
+	if camera then
+
+		Original.CameraFOV =
+			camera.FieldOfView
+	end
+
+
+	local head =
+		CurrentCharacter
+		and CurrentCharacter:FindFirstChild(
+			"Head"
+		)
+
+
+	if head
+		and head:IsA("BasePart")
+	then
+
+		Original.HeadSize =
+			head.Size
+	end
+end
+
+
+--// =========================================================
+--// INITIAL THEME
+--// =========================================================
+
+ApplyTheme(
+	"DEFAULT"
+)
+
+
+SwitchPage(
+	"HOME"
+)
+
+
+task.defer(function()
+
+	pcall(
+		RefreshTargetList
+	)
+end)
+
+
+--// =========================================================
+--// START MENU
+--// =========================================================
+
+if CONFIG.StartOpen then
+
+	OpenMenu(false)
+
+else
+
+	Window.Visible =
+		false
+
+	State.MenuOpen =
+		false
+end
+
+
+FloatingButton.Visible =
+	true
+
+
+--// =========================================================
+--// FLOATING BUTTON ANIMATION
+--// =========================================================
+
+task.spawn(function()
+
+	while gui.Parent do
+
+		tween(
+			FloatingButton,
+			TweenInfo.new(
+				1.4,
+				Enum.EasingStyle.Sine,
+				Enum.EasingDirection.InOut
+			),
+			{
+				Rotation = 4
+			}
+		)
+
+
+		task.wait(1.4)
+
+
+		tween(
+			FloatingButton,
+			TweenInfo.new(
+				1.4,
+				Enum.EasingStyle.Sine,
+				Enum.EasingDirection.InOut
+			),
+			{
+				Rotation = -4
+			}
+		)
+
+
+		task.wait(1.4)
+	end
+end)
+
+
+--// =========================================================
+--// FLY MOBILE UI STATE
+--// =========================================================
+
+task.spawn(function()
+
+	while gui.Parent do
+
+		if State.FlyEnabled then
+
+			if not FlyMobileControls then
+				CreateFlyMobileControls()
+			end
+
+			if FlyMobileControls then
+				FlyMobileControls.Visible = true
+			end
+
+		else
+
+			if FlyMobileControls then
+				FlyMobileControls.Visible = false
+			end
+
+			State.FlyUpHeld = false
+			State.FlyDownHeld = false
+		end
+
+		task.wait(0.15)
+	end
+end)
+
+
+--// =========================================================
+--// FINAL TOAST
+--// =========================================================
+
+CreateToast(
+	"TBAM v2.9.0",
+	"AERO ADMIN / TEST PANEL pronto.",
+	2.5
+)
+
+
+warn(
+	"[TBAM] v2.9.0 LOADED | PlayerGui"
+)
