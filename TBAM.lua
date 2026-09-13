@@ -87,6 +87,10 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
 
+-- Forward UI/theme references used by helper functions declared before initialization.
+local Theme
+local gui
+
 if not LocalPlayer then
 	warn("[TBAM] LocalPlayer não encontrado.")
 	return
@@ -1420,7 +1424,7 @@ local THEMES = {
 	}
 }
 
-local Theme = THEMES.DEFAULT
+Theme = THEMES.DEFAULT
 
 
 --// =========================================================
@@ -1442,7 +1446,7 @@ end
 --// SCREEN GUI
 --// =========================================================
 
-local gui = Instance.new("ScreenGui")
+gui = Instance.new("ScreenGui")
 
 gui.Name = "TBAM_GUI"
 gui.IgnoreGuiInset = true
@@ -8075,3 +8079,771 @@ PVPWallCheckButton =
 
 			SetButtonState(
 			
+				button,
+				State.PVPWallCheck
+			)
+		end
+	)
+
+
+--// =========================================================
+--// PVP (CONTINUAÇÃO / FINALIZAÇÃO)
+--// =========================================================
+
+PVPIgnoreDeadButton =
+	CreateButton(
+		PVPPage,
+		"IGNORE DEAD  •  ON",
+		function(button)
+			State.PVPIgnoreDead = not State.PVPIgnoreDead
+			button.Text =
+				"IGNORE DEAD  •  " .. (State.PVPIgnoreDead and "ON" or "OFF")
+			SetButtonState(button, State.PVPIgnoreDead)
+		end
+	)
+
+PVPStopButton =
+	CreateButton(
+		PVPPage,
+		"STOP AUTO PVP",
+		function()
+			State.PVPAutoHunt = false
+			State.PVPAutoAttack = false
+			State.PVPAutoTarget = false
+			State.PVPAimAssist = false
+			State.PVPAimBot = false
+			State.PVPTargetLock = false
+			State.PVPNearestTarget = false
+			PVPCurrentTarget = nil
+
+			if PVPAutoHuntButton then
+				PVPAutoHuntButton.Text = "AUTO HUNT  •  OFF"
+				SetButtonState(PVPAutoHuntButton, false)
+			end
+			if PVPAutoAttackButton then
+				PVPAutoAttackButton.Text = "AUTO ATTACK  •  OFF"
+				SetButtonState(PVPAutoAttackButton, false)
+			end
+			if PVPAutoTargetButton then
+				PVPAutoTargetButton.Text = "AUTO TARGET  •  OFF"
+				SetButtonState(PVPAutoTargetButton, false)
+			end
+			if PVPAimAssistButton then
+				PVPAimAssistButton.Text = "AIM ASSIST  •  OFF"
+				SetButtonState(PVPAimAssistButton, false)
+			end
+			if PVPAimBotButton then
+				PVPAimBotButton.Text = "AIM BOT  •  OFF"
+				SetButtonState(PVPAimBotButton, false)
+			end
+			if PVPTargetLockButton then
+				PVPTargetLockButton.Text = "TARGET LOCK  •  OFF"
+				SetButtonState(PVPTargetLockButton, false)
+			end
+			if PVPNearestButton then
+				PVPNearestButton.Text = "NEAREST TARGET  •  OFF"
+				SetButtonState(PVPNearestButton, false)
+			end
+
+			if PVPTargetInfoLabel then
+				PVPTargetInfoLabel.Text = "PVP TARGET  •  NONE"
+			end
+
+			CreateToast("PVP", "Todos os recursos automáticos foram parados.", 1.6)
+		end
+	)
+
+CreateSection(PVPPage, "INFO")
+
+CreateButton(
+	PVPPage,
+	"SHOW TARGET INFO",
+	function()
+		local target = PVPCurrentTarget or getPVPBestTarget()
+		if not target then
+			CreateToast("PVP", "Nenhum alvo válido.", 1.5)
+			return
+		end
+
+		local root = getPVPRoot(target)
+		local humanoid = getPVPHumanoid(target)
+		local myRoot = getRoot(getCharacter())
+		local distance = (root and myRoot) and (root.Position - myRoot.Position).Magnitude or 0
+		local hp = humanoid and humanoid.Health or 0
+		local maxHp = humanoid and humanoid.MaxHealth or 0
+
+		CreateToast(
+			"PVP TARGET",
+			string.format("%s | %.1f studs | HP %.0f/%.0f", target.Name, distance, hp, maxHp),
+			2.5
+		)
+	end
+)
+
+--// =========================================================
+--// CUSTOM
+--// =========================================================
+
+CreateSection(CustomPage, "INTERFACE")
+
+local ScaleButton = CreateButton(
+	CustomPage,
+	"UI SCALE  •  " .. string.format("%.2f", State.UIScale),
+	function(button)
+		State.UIScale += 0.10
+		if State.UIScale > CONFIG.MaxScale then
+			State.UIScale = CONFIG.MinScale
+		end
+		UIScaleObject.Scale = State.UIScale
+		button.Text = "UI SCALE  •  " .. string.format("%.2f", State.UIScale)
+	end
+)
+
+local CompactButton = CreateButton(
+	CustomPage,
+	"COMPACT MODE  •  OFF",
+	function(button)
+		State.CompactMode = not State.CompactMode
+		button.Text = "COMPACT MODE  •  " .. (State.CompactMode and "ON" or "OFF")
+		SetButtonState(button, State.CompactMode)
+	end
+)
+
+local GlowButton = CreateButton(
+	CustomPage,
+	"GLOW  •  ON",
+	function(button)
+		State.Glow = not State.Glow
+		button.Text = "GLOW  •  " .. (State.Glow and "ON" or "OFF")
+		SetButtonState(button, State.Glow)
+	end
+)
+
+CreateSection(CustomPage, "THEMES")
+
+local ThemeOrder = {"DEFAULT", "FRUTIGER_AERO", "GLASS", "CYBER", "WINDOWS_XP", "OLED", "Y2K"}
+
+local function recolorPVPObjects()
+	for _, object in pairs(PVPESPObjects) do
+		if object and object.Parent then
+			object.FillColor = Theme.Accent
+			object.OutlineColor = Theme.Text
+		end
+	end
+	for _, object in pairs(PVPNameObjects) do
+		if object and object.Parent then object.TextColor3 = Theme.Text end
+	end
+	for _, object in pairs(PVPHealthObjects) do
+		if object and object.Parent then object.TextColor3 = Theme.Accent end
+	end
+	for _, object in pairs(PVPDistanceObjects) do
+		if object and object.Parent then object.TextColor3 = Theme.Subtext end
+	end
+	for _, object in pairs(PVPTracerObjects) do
+		if object and object.Parent then object.BackgroundColor3 = Theme.Accent end
+	end
+end
+
+ApplyTheme = function(name)
+	local newTheme = THEMES[name]
+	if not newTheme then return end
+	Theme = newTheme
+	State.Theme = name
+
+	Window.BackgroundColor3 = Theme.Background
+	WindowStroke.Color = Theme.Border
+	Title.TextColor3 = Theme.Text
+	Subtitle.TextColor3 = Theme.Subtext
+	Status.TextColor3 = Theme.Subtext
+	CloseButton.BackgroundColor3 = Theme.Button
+	CloseButton.TextColor3 = Theme.Text
+	FloatingButton.BackgroundColor3 = Theme.Panel
+	FloatingButton.TextColor3 = Theme.Text
+	FloatingStroke.Color = Theme.Accent
+	SearchBox.BackgroundColor3 = Theme.Button
+	SearchBox.TextColor3 = Theme.Text
+	SearchBox.PlaceholderColor3 = Theme.Subtext
+	Sidebar.BackgroundColor3 = Theme.Panel
+	Sidebar.ScrollBarImageColor3 = Theme.Accent
+
+	for _, glow in ipairs({GlowA, GlowB, GlowC}) do
+		if glow and glow.Parent then
+			-- map each existing glow to the current theme
+		end
+	end
+	GlowA.BackgroundColor3 = Theme.Glow1
+	GlowB.BackgroundColor3 = Theme.Glow2
+	GlowC.BackgroundColor3 = Theme.Glow3
+
+	for _, section in ipairs(Sections) do
+		if section and section.Parent then section.TextColor3 = Theme.Subtext end
+	end
+	for _, entry in ipairs(Buttons) do
+		if entry.Object and entry.Object.Parent then
+			local enabled = entry.Object:GetAttribute("Enabled")
+			entry.Object.BackgroundColor3 = enabled and Theme.Accent or Theme.Button
+			entry.Object.TextColor3 = Theme.Text
+			entry.Stroke.Color = Theme.Border
+			entry.Stroke.Transparency = enabled and 0.25 or 0.78
+		end
+	end
+	for _, navButton in pairs(NavButtons) do
+		if navButton and navButton.Parent then
+			local active = navButton == NavButtons[State.ActivePage]
+			navButton.BackgroundColor3 = active and Theme.Accent or Theme.Button
+			navButton.BackgroundTransparency = active and 0 or 1
+			navButton.TextColor3 = active and Theme.Text or Theme.Subtext
+		end
+	end
+
+	if TargetInfoLabel then
+		TargetInfoLabel.BackgroundColor3 = Theme.Panel
+		TargetInfoLabel.TextColor3 = Theme.Text
+	end
+	if TargetStatsLabel then
+		TargetStatsLabel.BackgroundColor3 = Theme.Button
+		TargetStatsLabel.TextColor3 = Theme.Subtext
+	end
+	if TargetRemoteLabel then TargetRemoteLabel.TextColor3 = Theme.Subtext end
+	if PVPTargetInfoLabel then
+		PVPTargetInfoLabel.BackgroundColor3 = Theme.Panel
+		PVPTargetInfoLabel.TextColor3 = Theme.Text
+	end
+
+	for _, page in pairs(Pages) do
+		if page then page.ScrollBarImageColor3 = Theme.Accent end
+	end
+
+	recolorPVPObjects()
+
+	for _, button in pairs(ThemeButtons) do
+		if button and button.Parent then
+			button.TextColor3 = Theme.Text
+		end
+	end
+end
+
+for _, name in ipairs(ThemeOrder) do
+	local themeButton = CreateButton(
+		CustomPage,
+		"THEME  •  " .. name,
+		function()
+			ApplyTheme(name)
+			CreateToast("THEME", name .. " aplicado.", 1.5)
+		end
+	)
+	ThemeButtons[name] = themeButton
+end
+
+CreateButton(
+	CustomPage,
+	"RESET UI SETTINGS",
+	function()
+		State.UIScale = CONFIG.DefaultScale
+		State.CompactMode = false
+		State.Glow = true
+		State.Theme = "DEFAULT"
+		UIScaleObject.Scale = State.UIScale
+		ApplyTheme("DEFAULT")
+		ScaleButton.Text = "UI SCALE  •  " .. string.format("%.2f", State.UIScale)
+		CompactButton.Text = "COMPACT MODE  •  OFF"
+		GlowButton.Text = "GLOW  •  ON"
+		SetButtonState(CompactButton, false)
+		SetButtonState(GlowButton, true)
+	end
+)
+
+--// =========================================================
+--// RENDER / PVP ESP
+--// =========================================================
+
+local function destroyPVPObject(registry, player)
+	local object = registry[player]
+	if object then
+		pcall(function() object:Destroy() end)
+	end
+	registry[player] = nil
+end
+
+local function updatePVPESP()
+	local camera = getCamera()
+	if not camera then return end
+
+	local viewport = camera.ViewportSize
+	local center = Vector2.new(viewport.X / 2, viewport.Y / 2)
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer then
+			local valid = getPVPFilterResult(player)
+			local root = getPVPRoot(player)
+			local humanoid = getPVPHumanoid(player)
+
+			if valid and root then
+				if State.PVPPlayerESP then
+					ensurePVPESP(player)
+				else
+					destroyPVPObject(PVPESPObjects, player)
+				end
+
+			local screen, depth = getScreenPosition(player)
+			if screen and depth > 0 then
+				if State.PVPTracerESP then
+					local tracer = PVPTracerObjects[player]
+					if not tracer then
+						tracer = Instance.new("Frame")
+						tracer.Name = "TBAM_PVP_Tracer"
+						tracer.AnchorPoint = Vector2.new(0, 0.5)
+						tracer.BorderSizePixel = 0
+						tracer.ZIndex = 1880
+						tracer.Parent = gui
+						PVPTracerObjects[player] = tracer
+					end
+					local delta = screen - center
+					tracer.Position = UDim2.fromOffset(center.X, center.Y)
+					tracer.Size = UDim2.fromOffset(math.max(delta.Magnitude, 1), 1)
+					tracer.Rotation = math.deg(math.atan2(delta.Y, delta.X))
+					tracer.BackgroundColor3 = Theme.Accent
+					tracer.Visible = true
+				else
+					destroyPVPObject(PVPTracerObjects, player)
+				end
+
+				if State.PVPNameESP then
+					local label = PVPNameObjects[player]
+					if not label then
+						label = createPVPTextLabel(player.Name, Theme.Text)
+						PVPNameObjects[player] = label
+					end
+					label.Position = UDim2.fromOffset(screen.X, screen.Y - 30)
+					label.Text = player.Name
+					label.TextColor3 = Theme.Text
+					label.Visible = true
+				else
+					destroyPVPObject(PVPNameObjects, player)
+				end
+
+				if State.PVPHealthESP then
+					local label = PVPHealthObjects[player]
+					if not label then
+						label = createPVPTextLabel("", Theme.Accent)
+						PVPHealthObjects[player] = label
+					end
+					local hp = humanoid and humanoid.Health or 0
+					local maxHp = humanoid and math.max(humanoid.MaxHealth, 1) or 1
+					label.Position = UDim2.fromOffset(screen.X, screen.Y - 15)
+					label.Text = string.format("HP %.0f%%", math.clamp((hp / maxHp) * 100, 0, 100))
+					label.TextColor3 = Theme.Accent
+					label.Visible = true
+				else
+					destroyPVPObject(PVPHealthObjects, player)
+				end
+
+				if State.PVPDistanceESP then
+					local label = PVPDistanceObjects[player]
+					if not label then
+						label = createPVPTextLabel("", Theme.Subtext)
+						PVPDistanceObjects[player] = label
+					end
+					local myRoot = getRoot(getCharacter())
+					local distance = myRoot and (root.Position - myRoot.Position).Magnitude or 0
+					label.Position = UDim2.fromOffset(screen.X, screen.Y + 2)
+					label.Text = string.format("%.0f studs", distance)
+					label.TextColor3 = Theme.Subtext
+					label.Visible = true
+				else
+					destroyPVPObject(PVPDistanceObjects, player)
+				end
+			else
+				destroyPVPObject(PVPTracerObjects, player)
+				destroyPVPObject(PVPNameObjects, player)
+				destroyPVPObject(PVPHealthObjects, player)
+				destroyPVPObject(PVPDistanceObjects, player)
+			end
+		else
+			destroyPVPObject(PVPESPObjects, player)
+			destroyPVPObject(PVPTracerObjects, player)
+			destroyPVPObject(PVPNameObjects, player)
+			destroyPVPObject(PVPHealthObjects, player)
+			destroyPVPObject(PVPDistanceObjects, player)
+		end
+	end
+end
+end
+
+--// =========================================================
+--// MAIN LOOPS
+--// =========================================================
+
+local flyKeys = {
+	[Enum.KeyCode.W] = Vector3.new(0, 0, -1),
+	[Enum.KeyCode.S] = Vector3.new(0, 0, 1),
+	[Enum.KeyCode.A] = Vector3.new(-1, 0, 0),
+	[Enum.KeyCode.D] = Vector3.new(1, 0, 0),
+	[Enum.KeyCode.Space] = Vector3.new(0, 1, 0),
+	[Enum.KeyCode.RightShift] = Vector3.new(0, -1, 0),
+}
+
+local heldFlyKeys = {}
+
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed then return end
+	if flyKeys[input.KeyCode] then heldFlyKeys[input.KeyCode] = true end
+
+	if input.KeyCode == CONFIG.Hotkey then
+		if State.MenuOpen then
+			CloseWindow()
+		else
+			OpenWindow()
+		end
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if flyKeys[input.KeyCode] then heldFlyKeys[input.KeyCode] = false end
+end)
+
+local function updateFly()
+	if not State.FlyEnabled or not FlyVelocity or not FlyOrientation then return end
+	local camera = getCamera()
+	local root = getRoot(getCharacter())
+	if not camera or not root then return end
+
+	local forward = camera.CFrame.LookVector
+	local right = camera.CFrame.RightVector
+	local up = Vector3.new(0, 1, 0)
+	local velocity = Vector3.zero
+
+	if heldFlyKeys[Enum.KeyCode.W] then velocity += forward end
+	if heldFlyKeys[Enum.KeyCode.S] then velocity -= forward end
+	if heldFlyKeys[Enum.KeyCode.D] then velocity += right end
+	if heldFlyKeys[Enum.KeyCode.A] then velocity -= right end
+	if heldFlyKeys[Enum.KeyCode.Space] then velocity += up end
+	if heldFlyKeys[Enum.KeyCode.RightShift] then velocity -= up end
+
+	if velocity.Magnitude > 0 then velocity = velocity.Unit * CONFIG.FlySpeeds[State.FlyIndex] end
+	FlyVelocity.VectorVelocity = velocity
+	FlyOrientation.CFrame = CFrame.lookAt(root.Position, root.Position + forward, Vector3.yAxis)
+end
+
+local function updateTargetRuntime()
+	if TrollTarget and not isValidTrollTarget(TrollTarget) then
+		TrollTarget = nil
+		State.SelectedPlayer = nil
+		State.TrollTargetName = ""
+		ClearTrollHighlight()
+	end
+
+	if TrollTarget then
+		local hum = getTargetHumanoid(TrollTarget)
+		local root = getTargetRoot(TrollTarget)
+		local myRoot = getRoot(getCharacter())
+		if TargetStatsLabel and hum and root and myRoot then
+			TargetStatsLabel.Text = string.format(
+				"DISTANCE • %.1f | SPEED • %.1f | HP • %.0f",
+				(root.Position - myRoot.Position).Magnitude,
+				root.AssemblyLinearVelocity.Magnitude,
+				hum.Health
+			)
+		end
+
+		if State.TrollFollow and root and myRoot then
+			local desired = root.Position - root.CFrame.LookVector * CONFIG.FollowDistance + Vector3.new(0, CONFIG.FollowHeight, 0)
+			myRoot.CFrame = myRoot.CFrame:Lerp(CFrame.lookAt(desired, root.Position), 0.20)
+		end
+		if State.TrollSpin and root then
+			root.AssemblyAngularVelocity = Vector3.new(0, CONFIG.SpinPower, 0)
+		end
+		if State.TrollFreeze and root then
+			root.AssemblyLinearVelocity = Vector3.zero
+		end
+	end
+end
+
+local function updatePVP()
+	local anyAuto = State.PVPAutoTarget or State.PVPAutoHunt or State.PVPAutoAttack or State.PVPAimAssist or State.PVPAimBot
+	if not anyAuto then
+		return
+	end
+
+	if (State.PVPAutoTarget or State.PVPAutoHunt or State.PVPAutoAttack or State.PVPAimAssist or State.PVPAimBot) then
+		local needsNew = not PVPCurrentTarget or not getPVPFilterResult(PVPCurrentTarget)
+		if needsNew then
+			PVPCurrentTarget = getPVPBestTarget()
+		end
+	end
+
+	local target = PVPCurrentTarget
+	if not target then return end
+
+	if PVPTargetInfoLabel then
+		local root = getPVPRoot(target)
+		local myRoot = getRoot(getCharacter())
+		local distance = (root and myRoot) and (root.Position - myRoot.Position).Magnitude or 0
+		PVPTargetInfoLabel.Text = string.format("PVP TARGET  •  %s  •  %.0f studs", target.Name, distance)
+	end
+
+	local camera = getCamera()
+	local root = getPVPRoot(target)
+	if camera and root and (State.PVPAimAssist or State.PVPAimBot) then
+		local desired = CFrame.lookAt(camera.CFrame.Position, root.Position)
+		local smooth = getPVPCurrentSmoothness()
+		camera.CFrame = camera.CFrame:Lerp(desired, math.clamp(smooth, 0.01, 1))
+	end
+
+	if State.PVPAutoHunt then
+		moveTowardPVPTarget(target)
+	end
+
+	if State.PVPAutoAttack then
+		local now = os.clock()
+		if now - PVPAttackClock >= CONFIG.PVP.AttackInterval then
+			PVPAttackClock = now
+			executePVPAttack(target)
+		end
+	end
+end
+
+RunService.RenderStepped:Connect(function(dt)
+	State.FPS = dt > 0 and math.floor(1 / dt + 0.5) or 0
+	local pingValue = 0
+	pcall(function()
+		pingValue = math.floor(LocalPlayer:GetNetworkPing() * 1000 + 0.5)
+	end)
+	State.Ping = pingValue
+	pcall(function()
+		State.Memory = math.floor(Stats:GetTotalMemoryUsageMb() + 0.5)
+	end)
+
+	if FPSButton and FPSButton.Parent then FPSButton.Text = "FPS  •  " .. tostring(State.FPS) end
+	if PingButton and PingButton.Parent then PingButton.Text = "PING  •  " .. tostring(State.Ping) .. " ms" end
+	if MemoryButton and MemoryButton.Parent then MemoryButton.Text = "MEMORY  •  " .. tostring(State.Memory) .. " MB" end
+
+	local active = 0
+	for _, entry in ipairs(Buttons) do
+		if entry.Object and entry.Object.Parent and entry.Object:GetAttribute("Enabled") then active += 1 end
+	end
+	if ActiveCounter and ActiveCounter.Parent then ActiveCounter.Text = "ACTIVE FEATURES  •  " .. tostring(active) end
+
+	updateFly()
+	updateTargetRuntime()
+	updatePVPESP()
+	updatePVP()
+
+	if PositionButton and PositionButton.Parent then
+		local root = getRoot(getCharacter())
+		if root then
+			PositionButton.Text = string.format("POSITION  •  %.0f, %.0f, %.0f", root.Position.X, root.Position.Y, root.Position.Z)
+		end
+	end
+	if VelocityButton and VelocityButton.Parent then
+		local root = getRoot(getCharacter())
+		if root then VelocityButton.Text = string.format("VELOCITY  •  %.1f", root.AssemblyLinearVelocity.Magnitude) end
+	end
+	if HumanoidStateButton and HumanoidStateButton.Parent then
+		local hum = getHumanoid(getCharacter())
+		if hum then HumanoidStateButton.Text = "HUMANOID STATE  •  " .. hum:GetState().Name end
+	end
+
+	local search = string.lower(SearchBox.Text or "")
+	for _, entry in ipairs(Buttons) do
+		if entry.Object and entry.Object.Parent then
+			local text = entry.Object:GetAttribute("SearchText") or ""
+			entry.Object.Visible = search == "" or string.find(text, search, 1, true) ~= nil
+		end
+	end
+end)
+
+--// =========================================================
+--// WINDOW OPEN / CLOSE
+--// =========================================================
+
+local function setWindowSize(open)
+	if open then
+		Window.Visible = true
+		Window.Size = UDim2.fromOffset(CONFIG.ClosedSize.X, CONFIG.ClosedSize.Y)
+		tween(Window, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			Size = UDim2.fromOffset(CONFIG.OpenSize.X, CONFIG.OpenSize.Y)
+		})
+	else
+		tween(Window, TweenInfo.new(0.20, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
+			Size = UDim2.fromOffset(CONFIG.ClosedSize.X, CONFIG.ClosedSize.Y)
+		})
+		task.delay(0.18, function()
+			if not State.MenuOpen then Window.Visible = false end
+		end)
+	end
+end
+
+function OpenWindow()
+	State.MenuOpen = true
+	FloatingButton.Visible = false
+	setWindowSize(true)
+end
+
+function CloseWindow()
+	State.MenuOpen = false
+	FloatingButton.Visible = true
+	setWindowSize(false)
+end
+
+CloseButton.Activated:Connect(CloseWindow)
+FloatingButton.Activated:Connect(OpenWindow)
+
+SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+	local search = string.lower(SearchBox.Text or "")
+	for _, entry in ipairs(Buttons) do
+		if entry.Object and entry.Object.Parent then
+			local text = entry.Object:GetAttribute("SearchText") or ""
+			entry.Object.Visible = search == "" or string.find(text, search, 1, true) ~= nil
+		end
+	end
+end)
+
+--// =========================================================
+--// CHARACTER / RESPAWN
+--// =========================================================
+
+local function cleanupCharacterEffects()
+	if FlyVelocity then FlyVelocity:Destroy(); FlyVelocity = nil end
+	if FlyOrientation then FlyOrientation:Destroy(); FlyOrientation = nil end
+	if FlyAttachment then FlyAttachment:Destroy(); FlyAttachment = nil end
+	if TrailObject then TrailObject:Destroy(); TrailObject = nil end
+	if TrailAttachment0 then TrailAttachment0:Destroy(); TrailAttachment0 = nil end
+	if TrailAttachment1 then TrailAttachment1:Destroy(); TrailAttachment1 = nil end
+	if ParticleObject then ParticleObject:Destroy(); ParticleObject = nil end
+	State.FlyEnabled = false
+	State.Trail = false
+	State.Particles = false
+	State.BigHead = false
+end
+
+LocalPlayer.CharacterAdded:Connect(function(character)
+	CurrentCharacter = character
+	State.SelectedPlayer = nil
+	TrollTarget = nil
+	PVPCurrentTarget = nil
+	ClearTrollHighlight()
+	clearPVPObjects()
+	cleanupCharacterEffects()
+
+	task.wait(0.3)
+	local hum = getHumanoid(character)
+	if hum then
+		hum.WalkSpeed = State.SpeedEnabled and CONFIG.SpeedValues[State.SpeedIndex] or Original.WalkSpeed
+		hum.UseJumpPower = true
+		hum.JumpPower = State.JumpEnabled and CONFIG.JumpValues[State.JumpIndex] or Original.JumpPower
+	end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	if PVPCurrentTarget == player then PVPCurrentTarget = nil end
+	destroyPVPObject(PVPESPObjects, player)
+	destroyPVPObject(PVPTracerObjects, player)
+	destroyPVPObject(PVPNameObjects, player)
+	destroyPVPObject(PVPHealthObjects, player)
+	destroyPVPObject(PVPDistanceObjects, player)
+	if State.SelectedPlayer == player then
+		State.SelectedPlayer = nil
+		TrollTarget = nil
+	end
+end)
+
+--// =========================================================
+--// MOBILE FLY CONTROLS
+--// =========================================================
+
+local function createMobileFlyControls()
+	if FlyMobileControls then FlyMobileControls:Destroy() end
+
+	FlyMobileControls = Instance.new("Frame")
+	FlyMobileControls.Name = "TBAM_FlyControls"
+	FlyMobileControls.Size = UDim2.fromOffset(135, 70)
+	FlyMobileControls.Position = UDim2.new(1, -150, 1, -105)
+	FlyMobileControls.BackgroundTransparency = 1
+	FlyMobileControls.Visible = false
+	FlyMobileControls.ZIndex = 1800
+	FlyMobileControls.Parent = gui
+
+	local function mk(name, text, pos)
+		local b = Instance.new("TextButton")
+		b.Name = name
+		b.Size = UDim2.fromOffset(CONFIG.MobileFlyButtonSize, CONFIG.MobileFlyButtonSize)
+		b.Position = pos
+		b.BackgroundColor3 = Theme.Panel
+		b.BackgroundTransparency = 0.12
+		b.BorderSizePixel = 0
+		b.Text = text
+		b.TextColor3 = Theme.Text
+		b.TextSize = 18
+		b.Font = Enum.Font.GothamBold
+		b.ZIndex = 1801
+		b.Parent = FlyMobileControls
+		local c = Instance.new("UICorner")
+		c.CornerRadius = UDim.new(1, 0)
+		c.Parent = b
+		local s = Instance.new("UIStroke")
+		s.Color = Theme.Border
+		s.Parent = b
+		return b
+	end
+
+	FlyUpButton = mk("Up", "▲", UDim2.fromOffset(70, 0))
+	FlyDownButton = mk("Down", "▼", UDim2.fromOffset(70, 75))
+
+	FlyUpButton.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+			State.FlyUpHeld = true
+		end
+	end)
+	FlyUpButton.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+			State.FlyUpHeld = false
+		end
+	end)
+	FlyDownButton.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+			State.FlyDownHeld = true
+		end
+	end)
+	FlyDownButton.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+			State.FlyDownHeld = false
+		end
+	end)
+end
+
+createMobileFlyControls()
+
+-- Add mobile vertical controls to the fly runtime.
+RunService.RenderStepped:Connect(function()
+	if not State.FlyEnabled then
+		if FlyMobileControls then FlyMobileControls.Visible = false end
+		return
+	end
+	if FlyMobileControls then FlyMobileControls.Visible = UserInputService.TouchEnabled end
+	local root = getRoot(getCharacter())
+	if root and FlyVelocity and (State.FlyUpHeld or State.FlyDownHeld) then
+		local extra = 0
+		if State.FlyUpHeld then extra += CONFIG.FlySpeeds[State.FlyIndex] end
+		if State.FlyDownHeld then extra -= CONFIG.FlySpeeds[State.FlyIndex] end
+		local v = FlyVelocity.VectorVelocity
+		FlyVelocity.VectorVelocity = Vector3.new(v.X, extra, v.Z)
+	end
+end)
+
+--// =========================================================
+--// FINAL INITIALIZATION
+--// =========================================================
+
+SwitchPage("HOME")
+ApplyTheme("DEFAULT")
+RefreshTargetList()
+CurrentCharacter = getCharacter()
+
+if CONFIG.StartOpen then
+	OpenWindow()
+else
+	CloseWindow()
+end
+
+CreateToast("TBAM", "Painel carregado corretamente.", 2)
