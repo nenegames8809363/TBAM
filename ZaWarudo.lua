@@ -1,12 +1,13 @@
--- SillyCat Hub | Real Desync V10 (Za Warudo Edition)
+-- SillyCat Hub | Real Desync V14 (Za Warudo Edition + Air Walk no Clone)
 -- by Boykisser / SillyCat
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-    Name = "SillyCat Hub | Real Desync V10",
+    Name = "SillyCat Hub | Real Desync V14",
     LoadingTitle = "SillyCat - Sistema Za Warudo",
     LoadingSubtitle = "by Boykisser",
+    ShowText = "SillyCat",
     ConfigurationSaving = { Enabled = false },
     Discord = { Enabled = false, Invite = "noinvitelink", RememberJoins = true },
     KeySystem = false
@@ -20,18 +21,34 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local Lighting = game:GetService("Lighting")
 local SoundService = game:GetService("SoundService")
+local Debris = game:GetService("Debris")
+local TextChatService = game:GetService("TextChatService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CoreGui = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer
 local ICON = 4483362458
 
--- Se o tic-tac não tocar, troca por qualquer rbxassetid de tic-tac
-local TICK_SOUND_ID = "rbxassetid://8966275754"
+-- ===== CONFIG =====
+local TICK_SOUND_ID = "rbxassetid://8966275754"   -- tic-tac do Za Warudo
+local ZA_WARUDO_VOICE_ID = ""                     -- COLOCA AQUI o ID da voz (ex: "rbxassetid://123456")
+local CHAT_MESSAGE = "ZA WARUDO!"                 -- o que o player fala no chat
+local AIRWALK_SIZE = Vector3.new(10, 1, 10)
+local MINIMIZE_MENU_ON_TOGGLE = true              -- minimiza o menu ao ligar/desligar o Za Warudo
 
--- Estado do desync
+-- ===== ESTADO =====
 local active = false
 local originalCFrame = nil
 local clone, cloneHum, cloneRoot = nil, nil, nil
-local moveConn, jumpConn = nil, nil
+local moveConn, jumpConn, diedConn = nil, nil, nil
+local menuMinimized = false
+
+-- Air Walk
+local airWalkPart = nil
+local airWalkConn = nil
+local platformTopY = nil
+local lastMoverRoot = nil
+local footOffset = 3
 
 -- Efeitos visuais/sonoros
 local fx = { gui = nil, tint = nil, cc = nil, tick = nil }
@@ -44,13 +61,16 @@ pcall(function()
     controls = require(pm):GetControls()
 end)
 
+-- ===== UTILIDADES =====
 local function notify(title, content, duration)
-    Rayfield:Notify({
-        Title = title,
-        Content = content,
-        Duration = duration or 3,
-        Image = ICON
-    })
+    pcall(function()
+        Rayfield:Notify({
+            Title = title,
+            Content = content,
+            Duration = duration or 3,
+            Image = ICON
+        })
+    end)
 end
 
 local function tween(obj, time, props, style, dir)
@@ -71,16 +91,106 @@ local function getGuiParent()
     return LocalPlayer:WaitForChild("PlayerGui")
 end
 
--- Remove todos os efeitos visuais e sonoros
+-- Acha o ScreenGui do Rayfield
+local function findRayfieldGui()
+    local containers = { CoreGui, LocalPlayer:FindFirstChild("PlayerGui") }
+    local ok, hui = pcall(function() return gethui() end)
+    if ok and typeof(hui) == "Instance" then
+        table.insert(containers, hui)
+    end
+    for _, container in ipairs(containers) do
+        if container then
+            for _, gui in ipairs(container:GetChildren()) do
+                if gui:IsA("ScreenGui") and gui.Name == "Rayfield" then
+                    return gui
+                end
+            end
+        end
+    end
+    return nil
+end
+
+-- Procura o botão de minimizar da barra do Rayfield pelo nome
+local function findMinimizeButton()
+    local rf = findRayfieldGui()
+    if not rf then return nil end
+    for _, obj in ipairs(rf:GetDescendants()) do
+        if obj:IsA("GuiButton") then
+            local n = string.lower(obj.Name)
+            if string.find(n, "minim") or string.find(n, "hide") then
+                return obj
+            end
+        end
+    end
+    return nil
+end
+
+-- Minimiza o menu usando o próprio botão do Rayfield (sem destruir nada)
+local function minimizeMenu()
+    if not MINIMIZE_MENU_ON_TOGGLE or menuMinimized then return end
+
+    local btn = findMinimizeButton()
+    if btn then
+        local ok = pcall(function()
+            firesignal(btn.MouseButton1Click)
+        end)
+        if ok then
+            menuMinimized = true
+            return
+        end
+    end
+
+    -- Fallback: esconde só o frame principal, se o botão não for encontrado
+    local rf = findRayfieldGui()
+    local main = rf and rf:FindFirstChild("Main")
+    if main then
+        main.Visible = false
+        menuMinimized = true
+    else
+        notify("Aviso", "Não achei o botão de minimizar do Rayfield. Use o RightControl.", 4)
+    end
+end
+
+-- Toca a voz "ZA WARUDO!" (se tiver ID)
+local function playVoice()
+    if ZA_WARUDO_VOICE_ID == "" then return end
+    local s = Instance.new("Sound")
+    s.Name = "SillyCat_Voice"
+    s.SoundId = ZA_WARUDO_VOICE_ID
+    s.Volume = 2
+    s.Parent = SoundService
+    s:Play()
+    Debris:AddItem(s, 8)
+end
+
+-- Manda mensagem no chat (TextChatService ou chat antigo)
+local function sayInChat(msg)
+    pcall(function()
+        if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+            local channels = TextChatService:FindFirstChild("TextChannels")
+            local channel = channels and channels:FindFirstChild("RBXGeneral")
+            if channel then
+                channel:SendAsync(msg)
+            end
+        else
+            local events = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+            local say = events and events:FindFirstChild("SayMessageRequest")
+            if say then
+                say:FireServer(msg, "All")
+            end
+        end
+    end)
+end
+
+-- Remove efeitos visuais e sonoros
 local function stopEffects(fade)
     local gui, cc, tick = fx.gui, fx.cc, fx.tick
     fx.gui, fx.cc, fx.tick, fx.tint = nil, nil, nil, nil
 
     if tick then
         if fade then
-            tween(tick, 0.6, { Volume = 0 }).Completed:Connect(function()
-                tick:Destroy()
-            end)
+            local t = tween(tick, 0.6, { Volume = 0 })
+            t.Completed:Connect(function() tick:Destroy() end)
         else
             tick:Destroy()
         end
@@ -88,9 +198,8 @@ local function stopEffects(fade)
 
     if cc then
         if fade then
-            tween(cc, 0.6, { Saturation = 0, TintColor = Color3.new(1, 1, 1) }).Completed:Connect(function()
-                cc:Destroy()
-            end)
+            local t = tween(cc, 0.6, { Saturation = 0, TintColor = Color3.new(1, 1, 1) })
+            t.Completed:Connect(function() cc:Destroy() end)
         else
             cc:Destroy()
         end
@@ -98,16 +207,14 @@ local function stopEffects(fade)
 
     if gui then
         if fade then
-            task.delay(0.7, function()
-                gui:Destroy()
-            end)
+            task.delay(0.7, function() gui:Destroy() end)
         else
             gui:Destroy()
         end
     end
 end
 
--- Efeito Za Warudo: círculo preto expande, cobre a tela, depois vira amarelo + tic-tac
+-- Efeito Za Warudo
 local function playZaWarudoEffect()
     stopEffects(false)
 
@@ -121,7 +228,6 @@ local function playZaWarudoEffect()
     gui.DisplayOrder = 999
     gui.Parent = getGuiParent()
 
-    -- Camada amarela (começa invisível)
     local tint = Instance.new("Frame")
     tint.Size = UDim2.fromScale(1, 1)
     tint.BackgroundColor3 = Color3.fromRGB(255, 200, 40)
@@ -129,7 +235,6 @@ local function playZaWarudoEffect()
     tint.BorderSizePixel = 0
     tint.Parent = gui
 
-    -- Círculo preto que expande (Iris-Out)
     local circle = Instance.new("Frame")
     circle.AnchorPoint = Vector2.new(0.5, 0.5)
     circle.Position = UDim2.fromScale(0.5, 0.5)
@@ -142,14 +247,12 @@ local function playZaWarudoEffect()
     corner.CornerRadius = UDim.new(1, 0)
     corner.Parent = circle
 
-    -- Filtro de cor no mundo (amarelado e um pouco sem saturação)
     local cc = Instance.new("ColorCorrectionEffect")
     cc.TintColor = Color3.fromRGB(255, 225, 120)
     cc.Saturation = 0
     cc.Contrast = 0.1
     cc.Parent = Lighting
 
-    -- Tic-tac de fundo
     local tick = Instance.new("Sound")
     tick.Name = "SillyCat_Tick"
     tick.SoundId = TICK_SOUND_ID
@@ -162,16 +265,14 @@ local function playZaWarudoEffect()
 
     fx.gui, fx.tint, fx.cc, fx.tick = gui, tint, cc, tick
 
-    -- Diagonal da tela para o círculo cobrir tudo
     local diag = math.sqrt(vp.X ^ 2 + vp.Y ^ 2) * 1.1
 
     local expand = tween(circle, 0.9, {
         Size = UDim2.fromOffset(diag, diag)
     }, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out)
 
-    -- Quando a tela estiver preta, o círculo some e fica o amarelo
     expand.Completed:Connect(function()
-        if not circle.Parent then return end
+        if fx.gui ~= gui then return end
         tween(circle, 0.5, { BackgroundTransparency = 1 })
         tween(tint, 0.6, { BackgroundTransparency = 0.45 })
         if fx.cc then
@@ -180,7 +281,7 @@ local function playZaWarudoEffect()
     end)
 end
 
--- Cria o clone móvel (local, só você vê)
+-- Cria o clone móvel
 local function createClone(char)
     char.Archivable = true
     local ok, c = pcall(function()
@@ -205,7 +306,7 @@ local function createClone(char)
     return c
 end
 
--- Deixa o corpo real translúcido só pra você
+-- Deixa o corpo real translúcido
 local function setRealBodyGhost(char, on)
     for _, obj in ipairs(char:GetDescendants()) do
         if obj:IsA("BasePart") then
@@ -213,6 +314,19 @@ local function setRealBodyGhost(char, on)
         end
     end
 end
+
+-- Retorna o corpo que está se movendo agora: clone (se desync ativo) ou personagem real
+local function getMover()
+    if active and cloneRoot and cloneRoot.Parent and cloneHum then
+        return cloneRoot, cloneHum
+    end
+    local c = LocalPlayer.Character
+    local r = c and c:FindFirstChild("HumanoidRootPart")
+    local h = c and c:FindFirstChildOfClass("Humanoid")
+    return r, h
+end
+
+local stopDesync -- forward declaration
 
 local function startDesync()
     local char = LocalPlayer.Character
@@ -224,7 +338,6 @@ local function startDesync()
         return false
     end
 
-    -- Cria o clone ANTES de deixar o corpo real translúcido (senão o clone herdava a transparência)
     local newClone = createClone(char)
     if not newClone then
         notify("Erro", "Não consegui clonar o personagem.")
@@ -237,7 +350,7 @@ local function startDesync()
 
     if not cloneHum or not cloneRoot then
         clone:Destroy()
-        clone = nil
+        clone, cloneHum, cloneRoot = nil, nil, nil
         notify("Erro", "Clone sem Humanoid/HumanoidRootPart.")
         return false
     end
@@ -246,27 +359,33 @@ local function startDesync()
 
     active = true
     originalCFrame = root.CFrame
+    lastMoverRoot = nil
 
-    -- Congela o corpo real
     root.Anchored = true
     setRealBodyGhost(char, true)
 
-    -- Câmera segue o clone
     workspace.CurrentCamera.CameraSubject = cloneHum
 
     playZaWarudoEffect()
+    playVoice()
+    sayInChat(CHAT_MESSAGE)
 
-    -- Movimento via joystick/teclado/touch
     moveConn = RunService.RenderStepped:Connect(function()
         if not active or not cloneHum or not cloneHum.Parent then return end
         local move = controls and controls:GetMoveVector() or Vector3.zero
         cloneHum:Move(move, true)
     end)
 
-    -- Pulo (mobile e teclado)
     jumpConn = UserInputService.JumpRequest:Connect(function()
         if active and cloneHum and cloneHum.Parent then
             cloneHum.Jump = true
+        end
+    end)
+
+    -- se o personagem real morrer com o Za Warudo ativo, encerra sem travar
+    diedConn = hum.Died:Connect(function()
+        if active then
+            stopDesync(false)
         end
     end)
 
@@ -274,27 +393,21 @@ local function startDesync()
     return true
 end
 
--- Encerra o desync
--- snapToClone = true -> teleporta o corpo real pra posição do clone (Snap Back)
--- snapToClone = false -> volta pro lugar onde o tempo parou
-local function stopDesync(snapToClone)
+stopDesync = function(snapToClone)
     if not active then return end
     active = false
 
     if moveConn then moveConn:Disconnect() moveConn = nil end
     if jumpConn then jumpConn:Disconnect() jumpConn = nil end
+    if diedConn then diedConn:Disconnect() diedConn = nil end
 
     local targetCFrame = nil
     if snapToClone and clone and clone.Parent then
         targetCFrame = clone:GetPivot()
     end
 
-    if clone then
-        clone:Destroy()
-        clone = nil
-        cloneHum = nil
-        cloneRoot = nil
-    end
+    if clone then clone:Destroy() end
+    clone, cloneHum, cloneRoot = nil, nil, nil
 
     local char = LocalPlayer.Character
     if char then
@@ -317,29 +430,34 @@ local function stopDesync(snapToClone)
     end
 
     originalCFrame = nil
+    lastMoverRoot = nil
     stopEffects(true)
 end
 
--- Morreu ou resetou: limpa tudo e desliga o toggle
 LocalPlayer.CharacterRemoving:Connect(function()
     stopDesync(false)
+    platformTopY = nil
+    lastMoverRoot = nil
 end)
 
 local DesyncToggle
 DesyncToggle = Tab:CreateToggle({
-    Name = "Ativar Za Warudo Desync (V10)",
+    Name = "Ativar Za Warudo Desync (V14)",
     CurrentValue = false,
     Flag = "DesyncToggle",
     Callback = function(value)
         if value then
             if active then return end
-            if not startDesync() then
+            if startDesync() then
+                minimizeMenu()
+            else
                 pcall(function() DesyncToggle:Set(false) end)
             end
         else
             if active then
                 stopDesync(false)
                 notify("Tempo Retomado", "Você voltou pro ponto onde o tempo parou.", 3)
+                minimizeMenu()
             end
         end
     end,
@@ -352,10 +470,87 @@ Tab:CreateButton({
             stopDesync(true)
             pcall(function() DesyncToggle:Set(false) end)
             notify("Snap Back!", "Tempo retomado na sua nova posição!", 3)
+            minimizeMenu()
         else
             notify("Aviso", "Ative o Za Warudo primeiro!", 3)
         end
     end,
 })
 
-notify("SillyCat Hub V10 Carregado", "Modo Cinematográfico pronto pro Delta.", 5)
+-- ===== AIR WALK (segue o clone quando o Za Warudo tá ativo) =====
+local function airWalkStep()
+    if not airWalkPart then return end
+
+    local r, h = getMover()
+    if not r or not h or h.Health <= 0 then return end
+
+    if r ~= lastMoverRoot then
+        lastMoverRoot = r
+        platformTopY = r.Position.Y - footOffset
+    end
+
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    local ignore = { airWalkPart }
+    if LocalPlayer.Character then table.insert(ignore, LocalPlayer.Character) end
+    if clone then table.insert(ignore, clone) end
+    params.FilterDescendantsInstances = ignore
+
+    local ray = workspace:Raycast(r.Position, Vector3.new(0, -12, 0), params)
+    local vy = r.AssemblyLinearVelocity.Y
+    local feetY = r.Position.Y - footOffset
+
+    if ray and h.FloorMaterial ~= Enum.Material.Air and vy < 1 then
+        local d = r.Position.Y - ray.Position.Y
+        if d <= footOffset + 1 then
+            platformTopY = ray.Position.Y
+            if d > 2 and d < 4.5 then
+                footOffset = d
+            end
+        end
+    end
+
+    if platformTopY == nil or (vy >= 1 and feetY > platformTopY) then
+        platformTopY = feetY
+    end
+
+    airWalkPart.CFrame = CFrame.new(
+        r.Position.X,
+        platformTopY - AIRWALK_SIZE.Y / 2,
+        r.Position.Z
+    )
+end
+
+Tab:CreateToggle({
+    Name = "☁️ Andar no Ar (Air Walk)",
+    CurrentValue = false,
+    Flag = "AirWalkToggle",
+    Callback = function(value)
+        if value then
+            if airWalkPart then return end
+            lastMoverRoot = nil
+            platformTopY = nil
+
+            airWalkPart = Instance.new("Part")
+            airWalkPart.Name = "SillyCat_AirWalk"
+            airWalkPart.Size = AIRWALK_SIZE
+            airWalkPart.Transparency = 1
+            airWalkPart.CanCollide = true
+            airWalkPart.Anchored = true
+            airWalkPart.CastShadow = false
+            airWalkPart.Parent = workspace
+
+            airWalkConn = RunService.Stepped:Connect(airWalkStep)
+
+            notify("Air Walk Ativado", "Pode andar no vazio sem cair!", 3)
+        else
+            if airWalkConn then airWalkConn:Disconnect() airWalkConn = nil end
+            if airWalkPart then airWalkPart:Destroy() airWalkPart = nil end
+            platformTopY = nil
+            lastMoverRoot = nil
+            notify("Air Walk Desativado", "Chão normal de volta.", 3)
+        end
+    end,
+})
+
+notify("SillyCat Hub V14 Carregado", "Tudo pronto pra rodar no Delta com estilo!", 5)
