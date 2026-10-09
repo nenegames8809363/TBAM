@@ -1,10 +1,10 @@
--- SillyCat Hub | Real Desync V14 (Za Warudo Edition + Air Walk no Clone)
+-- SillyCat Hub | Real Desync V16 (Za Warudo Edition + Air Walk no Clone)
 -- by Boykisser / SillyCat
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-    Name = "SillyCat Hub | Real Desync V14",
+    Name = "SillyCat Hub | Real Desync V16",
     LoadingTitle = "SillyCat - Sistema Za Warudo",
     LoadingSubtitle = "by Boykisser",
     ShowText = "SillyCat",
@@ -40,8 +40,10 @@ local MINIMIZE_MENU_ON_TOGGLE = true              -- minimiza o menu ao ligar/de
 local active = false
 local originalCFrame = nil
 local clone, cloneHum, cloneRoot = nil, nil, nil
-local moveConn, jumpConn, diedConn = nil, nil, nil
+local lastClonePivot = nil   -- última posição conhecida do clone (usada no renascimento)
+local moveConn, jumpConn = nil, nil
 local menuMinimized = false
+local pendingSnap = nil      -- CFrame onde o próximo personagem real deve renascer
 
 -- Air Walk
 local airWalkPart = nil
@@ -317,7 +319,7 @@ end
 
 -- Retorna o corpo que está se movendo agora: clone (se desync ativo) ou personagem real
 local function getMover()
-    if active and cloneRoot and cloneRoot.Parent and cloneHum then
+    if active and cloneRoot and cloneRoot.Parent and cloneHum and cloneHum.Health > 0 then
         return cloneRoot, cloneHum
     end
     local c = LocalPlayer.Character
@@ -356,6 +358,7 @@ local function startDesync()
     end
 
     clone:PivotTo(root.CFrame)
+    lastClonePivot = clone:GetPivot()
 
     active = true
     originalCFrame = root.CFrame
@@ -372,18 +375,22 @@ local function startDesync()
 
     moveConn = RunService.RenderStepped:Connect(function()
         if not active or not cloneHum or not cloneHum.Parent then return end
+        -- guarda a posição do clone a cada frame (usada se o real renascer)
+        if cloneRoot and cloneRoot.Parent then
+            lastClonePivot = clone:GetPivot()
+        end
         local move = controls and controls:GetMoveVector() or Vector3.zero
         cloneHum:Move(move, true)
     end)
 
     jumpConn = UserInputService.JumpRequest:Connect(function()
-        if active and cloneHum and cloneHum.Parent then
+        if active and cloneHum and cloneHum.Parent and cloneHum.Health > 0 then
             cloneHum.Jump = true
         end
     end)
 
-    -- se o personagem real morrer com o Za Warudo ativo, encerra sem travar
-    diedConn = hum.Died:Connect(function()
+    -- Se o clone morrer, o desync termina normalmente
+    cloneHum.Died:Connect(function()
         if active then
             stopDesync(false)
         end
@@ -399,34 +406,37 @@ stopDesync = function(snapToClone)
 
     if moveConn then moveConn:Disconnect() moveConn = nil end
     if jumpConn then jumpConn:Disconnect() jumpConn = nil end
-    if diedConn then diedConn:Disconnect() diedConn = nil end
 
+    -- Onde o player deve voltar: no clone (snap, ou se o real morreu) ou no ponto original
     local targetCFrame = nil
-    if snapToClone and clone and clone.Parent then
+    local realDead = true
+    local curChar = LocalPlayer.Character
+    local curHum = curChar and curChar:FindFirstChildOfClass("Humanoid")
+    if curHum and curHum.Health > 0 then realDead = false end
+
+    if clone and clone.Parent and (snapToClone or realDead) then
         targetCFrame = clone:GetPivot()
+    elseif originalCFrame then
+        targetCFrame = originalCFrame
     end
 
     if clone then clone:Destroy() end
     clone, cloneHum, cloneRoot = nil, nil, nil
 
-    local char = LocalPlayer.Character
-    if char then
-        setRealBodyGhost(char, false)
-
-        local root = char:FindFirstChild("HumanoidRootPart")
+    if not realDead and curChar then
+        -- personagem real vivo: restaura normalmente
+        setRealBodyGhost(curChar, false)
+        local root = curChar:FindFirstChild("HumanoidRootPart")
         if root then
             root.Anchored = false
             if targetCFrame then
-                char:PivotTo(targetCFrame)
-            elseif originalCFrame then
-                char:PivotTo(originalCFrame)
+                curChar:PivotTo(targetCFrame)
             end
         end
-
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            workspace.CurrentCamera.CameraSubject = hum
-        end
+        workspace.CurrentCamera.CameraSubject = curHum
+    else
+        -- personagem real morto/ausente: ele renasce na posição do clone
+        pendingSnap = targetCFrame
     end
 
     originalCFrame = nil
@@ -434,123 +444,6 @@ stopDesync = function(snapToClone)
     stopEffects(true)
 end
 
+-- Antes do corpo real sumir, salva a posição do clone (ela não pode mudar por causa do renascimento)
 LocalPlayer.CharacterRemoving:Connect(function()
-    stopDesync(false)
-    platformTopY = nil
-    lastMoverRoot = nil
-end)
-
-local DesyncToggle
-DesyncToggle = Tab:CreateToggle({
-    Name = "Ativar Za Warudo Desync (V14)",
-    CurrentValue = false,
-    Flag = "DesyncToggle",
-    Callback = function(value)
-        if value then
-            if active then return end
-            if startDesync() then
-                minimizeMenu()
-            else
-                pcall(function() DesyncToggle:Set(false) end)
-            end
-        else
-            if active then
-                stopDesync(false)
-                notify("Tempo Retomado", "Você voltou pro ponto onde o tempo parou.", 3)
-                minimizeMenu()
-            end
-        end
-    end,
-})
-
-Tab:CreateButton({
-    Name = "⚡ Snap Back (Teleporta pro clone)",
-    Callback = function()
-        if active then
-            stopDesync(true)
-            pcall(function() DesyncToggle:Set(false) end)
-            notify("Snap Back!", "Tempo retomado na sua nova posição!", 3)
-            minimizeMenu()
-        else
-            notify("Aviso", "Ative o Za Warudo primeiro!", 3)
-        end
-    end,
-})
-
--- ===== AIR WALK (segue o clone quando o Za Warudo tá ativo) =====
-local function airWalkStep()
-    if not airWalkPart then return end
-
-    local r, h = getMover()
-    if not r or not h or h.Health <= 0 then return end
-
-    if r ~= lastMoverRoot then
-        lastMoverRoot = r
-        platformTopY = r.Position.Y - footOffset
-    end
-
-    local params = RaycastParams.new()
-    params.FilterType = Enum.RaycastFilterType.Exclude
-    local ignore = { airWalkPart }
-    if LocalPlayer.Character then table.insert(ignore, LocalPlayer.Character) end
-    if clone then table.insert(ignore, clone) end
-    params.FilterDescendantsInstances = ignore
-
-    local ray = workspace:Raycast(r.Position, Vector3.new(0, -12, 0), params)
-    local vy = r.AssemblyLinearVelocity.Y
-    local feetY = r.Position.Y - footOffset
-
-    if ray and h.FloorMaterial ~= Enum.Material.Air and vy < 1 then
-        local d = r.Position.Y - ray.Position.Y
-        if d <= footOffset + 1 then
-            platformTopY = ray.Position.Y
-            if d > 2 and d < 4.5 then
-                footOffset = d
-            end
-        end
-    end
-
-    if platformTopY == nil or (vy >= 1 and feetY > platformTopY) then
-        platformTopY = feetY
-    end
-
-    airWalkPart.CFrame = CFrame.new(
-        r.Position.X,
-        platformTopY - AIRWALK_SIZE.Y / 2,
-        r.Position.Z
-    )
-end
-
-Tab:CreateToggle({
-    Name = "☁️ Andar no Ar (Air Walk)",
-    CurrentValue = false,
-    Flag = "AirWalkToggle",
-    Callback = function(value)
-        if value then
-            if airWalkPart then return end
-            lastMoverRoot = nil
-            platformTopY = nil
-
-            airWalkPart = Instance.new("Part")
-            airWalkPart.Name = "SillyCat_AirWalk"
-            airWalkPart.Size = AIRWALK_SIZE
-            airWalkPart.Transparency = 1
-            airWalkPart.CanCollide = true
-            airWalkPart.Anchored = true
-            airWalkPart.CastShadow = false
-            airWalkPart.Parent = workspace
-
-            airWalkConn = RunService.Stepped:Connect(airWalkStep)
-
-            notify("Air Walk Ativado", "Pode andar no vazio sem cair!", 3)
-        else
-            if airWalkConn then airWalkConn:Disconnect() airWalkConn = nil end
-            if airWalkPart then airWalkPart:Destroy() airWalkPart = nil end
-            platformTopY = nil
-            lastMoverRoot = nil
-            notify("Air Walk Desativado", "Chão normal de volta.", 3)
-        end
-    end,
-})
-
-notify("SillyCat Hub V14 Carregado", "Tudo pronto pra rodar no Delta com estilo!", 5)
+    if ac
